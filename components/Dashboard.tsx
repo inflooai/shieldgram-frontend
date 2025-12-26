@@ -183,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     // NOTE: In a production app, you should call your backend here to create an Order 
     // and pass the order_id in the options below.
     const options = {
-      key: 'rzp_test_PLACEHOLDER_KEY', // Replace with your Test Key ID from Razorpay Dashboard
+      key: process.env.RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY', // Allow env override for deployment
       amount: PLANS[newPlan].price * 100, // Amount is in smallest currency unit (e.g., paise/cents)
       currency: 'USD',
       name: 'ShieldGram',

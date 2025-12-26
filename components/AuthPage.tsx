@@ -10,11 +10,11 @@ interface AuthPageProps {
 
 // =========================================================================
 // AWS COGNITO BOILERPLATE CONFIGURATION
-// Replace these with your actual User Pool values from the AWS Console
+// Configured to use Environment Variables for easy Amplify Deployment
 // =========================================================================
 const COGNITO_CONFIG = {
-  UserPoolId: 'us-east-1_ZzzjCk0xy', // Placeholder with correct format (Region_ID)
-  ClientId: '1b0v6afasbk0kbhp68dijl5s4c' // Placeholder Client ID
+  UserPoolId: process.env.COGNITO_USER_POOL_ID || 'us-east-1_ZzzjCk0xy', 
+  ClientId: process.env.COGNITO_CLIENT_ID || '1b0v6afasbk0kbhp68dijl5s4c'
 };
 
 type AuthMode = 'signin' | 'signup' | 'verify';
@@ -28,8 +28,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Check for mock mode BEFORE initializing pool to avoid errors with bad IDs
-  const isMockMode = COGNITO_CONFIG.UserPoolId.includes('XXX');
+  // Check if we are running in mock mode (if env vars are missing or placeholders)
+  const isMockMode = !process.env.COGNITO_USER_POOL_ID || COGNITO_CONFIG.UserPoolId.includes('ZzzjCk0xy');
 
   // Safe initialization of User Pool
   let userPool: any = null;
@@ -50,7 +50,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     setError(null);
 
     if (isMockMode) {
-         console.warn('AWS Cognito Config missing. Using mock signup for demo.');
+         console.warn('AWS Cognito Config missing or using placeholders. Using mock signup for demo.');
          setTimeout(() => {
              setIsLoading(false);
              setAuthMode('verify');
@@ -133,7 +133,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     setError(null);
 
     if (isMockMode) {
-         console.warn('AWS Cognito Config missing. Using mock login for demo.');
+         console.warn('AWS Cognito Config missing or using placeholders. Using mock login for demo.');
          setTimeout(() => {
              localStorage.setItem('user-token', 'shieldgram-dummy-jwt-token');
              setIsLoading(false);
