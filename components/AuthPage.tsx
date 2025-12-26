@@ -13,8 +13,8 @@ interface AuthPageProps {
 // Replace these with your actual User Pool values from the AWS Console
 // =========================================================================
 const COGNITO_CONFIG = {
-  UserPoolId: 'us-east-1_XXXXXXXXX', // Placeholder with correct format (Region_ID)
-  ClientId: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' // Placeholder Client ID
+  UserPoolId: 'us-east-1_ZzzjCk0xy', // Placeholder with correct format (Region_ID)
+  ClientId: '1b0v6afasbk0kbhp68dijl5s4c' // Placeholder Client ID
 };
 
 type AuthMode = 'signin' | 'signup' | 'verify';
