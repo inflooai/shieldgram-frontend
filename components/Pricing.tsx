@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock } from 'lucide-react';
+import { Check, Clock, Users } from 'lucide-react';
 
 interface PricingProps {
   onNavigateDashboard: () => void;
@@ -35,6 +35,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>10k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
+                <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>1</strong> social account
+              </li>
+              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> ~5 min scan interval
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
@@ -65,6 +68,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>25k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
+                <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
+              </li>
+              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Clock className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> ~2 min scan interval
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
@@ -92,6 +98,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>100k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
+                <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>10</strong> social accounts
+              </li>
+              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> &lt; 1 min scan interval
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
@@ -117,6 +126,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>Unlimited</strong> comments
+              </li>
+              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
+                <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>Unlimited</strong> accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> &lt; 1 min scan interval

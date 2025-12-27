@@ -27,8 +27,8 @@ const CommentSlideshow: React.FC = () => {
   const [headIndex, setHeadIndex] = useState(0);
   const [processingState, setProcessingState] = useState<'idle' | 'scanning' | 'result' | 'blurring' | 'scrolling'>('idle');
 
-  // Derive the visible window of comments (Top 3 + 1 incoming)
-  const visibleComments = Array.from({ length: 4 }).map((_, i) => {
+  // Display 6 items to feel "fuller" in a taller container
+  const visibleComments = Array.from({ length: 6 }).map((_, i) => {
     const index = (headIndex + i) % mockComments.length;
     return mockComments[index];
   });
@@ -38,7 +38,7 @@ const CommentSlideshow: React.FC = () => {
 
     switch (processingState) {
       case 'idle':
-        // Start processing the new middle card (index 1) after a short delay
+        // Start processing the new middle card after a short delay
         timer = setTimeout(() => {
           setProcessingState('scanning');
         }, 500);
@@ -53,8 +53,7 @@ const CommentSlideshow: React.FC = () => {
 
       case 'result':
         // Show result for a while
-        // The middle card is at index 1 relative to headIndex
-        const currentComment = mockComments[(headIndex + 1) % mockComments.length];
+        const currentComment = mockComments[(headIndex + 2) % mockComments.length]; // Index 2 is the static middle now
         const isHidden = currentComment.status === 'hidden';
         const delay = isHidden ? 1500 : 1500;
         
@@ -89,7 +88,7 @@ const CommentSlideshow: React.FC = () => {
   const isScrolling = processingState === 'scrolling';
 
   return (
-    <div className="w-full max-w-md mx-auto relative h-[320px] overflow-hidden p-1 mask-gradient-v">
+    <div className="w-full max-w-md mx-auto relative h-[600px] overflow-hidden p-1 mask-gradient-v">
       <div 
         className={`flex flex-col gap-4 ease-in-out will-change-transform ${isScrolling ? 'transition-transform duration-600' : 'transition-none duration-0'}`}
         style={{ 
@@ -97,9 +96,9 @@ const CommentSlideshow: React.FC = () => {
         }}
       >
         {visibleComments.map((comment, index) => {
-          // KEY FIX: During scroll, the visual middle shifts to Index 2 (the one moving UP into the slot).
-          // Otherwise, the focus lags on Index 1 which is moving OUT.
-          const isMiddle = processingState === 'scrolling' ? index === 2 : index === 1;
+          // With 6 items visible, we target Index 2 as the visually centered "Active" card.
+          // During scrolling, Index 3 moves up to become Index 2, so it takes over focus.
+          const isMiddle = processingState === 'scrolling' ? index === 3 : index === 2;
           const isApproved = comment.status === 'approved';
           
           let borderClass = 'border-slate-200 dark:border-slate-800';
@@ -107,11 +106,8 @@ const CommentSlideshow: React.FC = () => {
           let opacityClass = 'opacity-100';
           let blurClass = 'blur-0';
 
-          // Apply focus/blur logic CONSTANTLY, even during 'idle', to prevent flickering.
           if (isMiddle) {
              // Active Card Logic
-             // FIX: Removed 'scrolling' from the condition below. 
-             // The incoming middle card (index 2 during scroll) should NOT show green/red yet.
              if (processingState === 'result' || processingState === 'blurring') {
                 if (isApproved) {
                   borderClass = 'border-green-200 dark:border-green-800';
@@ -126,20 +122,18 @@ const CommentSlideshow: React.FC = () => {
                 bgClass = 'bg-brand-50/30 dark:bg-brand-900/10 shadow-[0_0_15px_rgba(56,189,248,0.3)]';
              }
           } else {
-             // Non-active cards get blurred to focus attention on the middle
-             // Index 3 (incoming) and Index 0 (outgoing) are not the focus
-             if (index !== 3) { 
-               blurClass = 'blur-[2px] opacity-40 grayscale';
+             // Non-active cards blur out. 
+             // Index 5 is the incoming card at the bottom.
+             if (index !== 5) { 
+               blurClass = 'blur-[1.5px] opacity-60 grayscale';
              }
           }
 
-          // Text blur only happens during the 'blurring' phase for the active card
-          // We remove 'scrolling' here so the NEW middle card entering doesn't start with blurred text
           const isTextBlurred = isMiddle && processingState === 'blurring';
 
-          // Incoming card (Index 3) starts invisible until it scrolls in
-          if (index === 3) {
-             opacityClass = isScrolling ? 'opacity-40 blur-[2px] grayscale' : 'opacity-0';
+          // Incoming card (Index 5) starts invisible until it scrolls in
+          if (index === 5) {
+             opacityClass = isScrolling ? 'opacity-60 blur-[1.5px] grayscale' : 'opacity-0';
           }
 
           return (
@@ -157,7 +151,7 @@ const CommentSlideshow: React.FC = () => {
                   <div className="flex justify-between items-start">
                      <p className="text-sm font-bold text-slate-900 dark:text-white">{comment.user}</p>
                      
-                     {/* Status Badge - Only show when NOT scrolling to avoid spoilers on the incoming card */}
+                     {/* Status Badge */}
                      {isMiddle && (processingState === 'result' || processingState === 'blurring') && (
                         <span className={`flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full animate-scale-in ${
                             isApproved 
@@ -190,9 +184,9 @@ const CommentSlideshow: React.FC = () => {
         })}
       </div>
       
-      {/* Top and Bottom Gradients for smooth fade feel */}
-      <div className="absolute top-0 left-0 w-full h-8 bg-gradient-to-b from-slate-50 dark:from-slate-950 to-transparent pointer-events-none z-10"></div>
-      <div className="absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-slate-50 dark:from-slate-950 to-transparent pointer-events-none z-10"></div>
+      {/* Top and Bottom Gradients */}
+      <div className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 dark:from-slate-950 to-transparent pointer-events-none z-10"></div>
+      <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-slate-50 dark:from-slate-950 to-transparent pointer-events-none z-10"></div>
     </div>
   );
 };

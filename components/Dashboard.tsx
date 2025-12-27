@@ -46,10 +46,10 @@ const MOCK_ACCOUNTS: Account[] = [
 
 // Plan definitions for the billing tab
 const PLANS = {
-  standard: { price: 5, label: 'Standard', features: ['10k comments/mo', 'Standard Protection'] },
-  plus: { price: 10, label: 'Plus', features: ['25k comments/mo', 'Faster Scanning'] },
-  premium: { price: 25, label: 'Premium', features: ['100k comments/mo', 'Custom Policies'] },
-  max: { price: 100, label: 'Max', features: ['Unlimited comments', 'Priority Support'] }
+  standard: { price: 5, label: 'Standard', features: ['10k comments/mo', '1 social account', 'Standard Protection'] },
+  plus: { price: 10, label: 'Plus', features: ['25k comments/mo', '5 social accounts', 'Faster Scanning'] },
+  premium: { price: 25, label: 'Premium', features: ['100k comments/mo', '10 social accounts', 'Custom Policies'] },
+  max: { price: 100, label: 'Max', features: ['Unlimited comments', 'Unlimited accounts', 'Priority Support'] }
 };
 
 // Helper to load Razorpay SDK
@@ -231,10 +231,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       {/* Standalone Dashboard Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-brand-600 p-1.5 rounded-lg">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
+          <div className="flex items-center gap-3">
+             <img src="/logo.png" alt="ShieldGram" className="h-8 w-auto" />
             <span className="font-bold text-lg text-slate-900 dark:text-white tracking-tight hidden sm:inline">ShieldGram <span className="text-slate-400 font-normal ml-1">Dashboard</span></span>
           </div>
 

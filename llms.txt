@@ -11,10 +11,10 @@ ShieldGram is an AI-powered SaaS platform designed to moderate Instagram comment
 - **Privacy First**: User data is not stored; analysis is ephemeral.
 
 ## Pricing
-- **Standard ($5/mo)**: 10k comments/mo, 5 min scan interval.
-- **Plus ($10/mo)**: 25k comments/mo, 2 min scan interval.
-- **Premium ($25/mo)**: 100k comments/mo, <1 min scan interval, custom policies.
-- **Max ($100/mo)**: Unlimited comments, custom policies.
+- **Standard ($5/mo)**: 10k comments/mo, 1 account, 5 min scan interval.
+- **Plus ($10/mo)**: 25k comments/mo, 5 accounts, 2 min scan interval.
+- **Premium ($25/mo)**: 100k comments/mo, 10 accounts, <1 min scan interval, custom policies.
+- **Max ($100/mo)**: Unlimited comments, unlimited accounts, custom policies.
 
 ## Links
 - **Website**: https://www.shieldgram.com

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Menu, X, LayoutDashboard, Sun, Moon, LogOut } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Sun, Moon, LogOut } from 'lucide-react';
 
 interface NavbarProps {
   onNavigateDashboard: () => void;
@@ -26,12 +26,10 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div 
-            className="flex-shrink-0 flex items-center gap-2 cursor-pointer"
+            className="flex-shrink-0 flex items-center gap-3 cursor-pointer"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
-            <div className="bg-brand-600 p-1.5 rounded-lg">
-              <Shield className="h-6 w-6 text-white" />
-            </div>
+            <img src="/logo.png" alt="ShieldGram Logo" className="h-10 w-auto" />
             <span className="font-bold text-xl text-slate-900 dark:text-white tracking-tight">ShieldGram</span>
           </div>
 
