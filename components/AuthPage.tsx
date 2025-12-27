@@ -15,10 +15,11 @@ interface AuthPageProps {
 // Configured to use Environment Variables for easy Amplify Deployment
 // =========================================================================
 const COGNITO_CONFIG = {
-  UserPoolId: process.env.COGNITO_USER_POOL_ID || 'us-east-1_ZzzjCk0xy', 
-  ClientId: process.env.COGNITO_CLIENT_ID || '1b0v6afasbk0kbhp68dijl5s4c'
+  UserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID, 
+  ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID
 };
-
+console.log('COGNITO_CONFIG:', COGNITO_CONFIG);
+console.log('ALL ENV:', import.meta.env);
 type AuthMode = 'signin' | 'signup' | 'verify';
 
 const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
@@ -31,7 +32,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Check if we are running in mock mode (if env vars are missing or placeholders)
-  const isMockMode = !process.env.COGNITO_USER_POOL_ID || COGNITO_CONFIG.UserPoolId.includes('ZzzjCk0xy');
+  const isMockMode = !COGNITO_CONFIG.UserPoolId || COGNITO_CONFIG.UserPoolId.includes('xxx');
 
   // Safe initialization of User Pool
   let userPool: any = null;

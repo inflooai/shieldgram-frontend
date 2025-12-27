@@ -11,7 +11,10 @@ export const setAuthToken = (token: string) => {
   
   // Logic to handle localhost vs production domains
   let domainAttribute = '';
-  if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
+  // Check if we are on localhost (including subdomains like dashboard.localhost)
+  const isLocalhost = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.includes('127.0.0.1');
+  
+  if (!isLocalhost) {
     // Remove 'dashboard.' or 'www.' to get the root domain
     const rootDomain = hostname.replace(/^(dashboard|www)\./, '');
     domainAttribute = `; domain=.${rootDomain}`;
@@ -23,8 +26,10 @@ export const setAuthToken = (token: string) => {
 
 export const removeAuthToken = () => {
   const hostname = window.location.hostname;
+  const isLocalhost = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.includes('127.0.0.1');
+
   let domainAttribute = '';
-  if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
+  if (!isLocalhost) {
     const rootDomain = hostname.replace(/^(dashboard|www)\./, '');
     domainAttribute = `; domain=.${rootDomain}`;
   }

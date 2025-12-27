@@ -28,8 +28,9 @@ interface UserSettings {
     spam: boolean;
     hateSpeech: boolean;
     harassment: boolean;
-    sexual: boolean;
     violence: boolean;
+    sexualContent: boolean;
+    selfHarm: boolean;
   };
   customInstructions: string;
 }
@@ -87,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [activity, setActivity] = useState<ModeratedCommentLog[]>([]);
   const [settings, setSettings] = useState<UserSettings>({
     plan: 'standard', // Default start plan
-    policies: { spam: true, hateSpeech: true, harassment: false, sexual: false, violence: false },
+    policies: { spam: true, hateSpeech: true, harassment: false, violence: false, sexualContent: false, selfHarm: false },
     customInstructions: ''
   });
 
@@ -551,8 +552,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <Shield className="w-5 h-5 text-brand-500" /> Standard Protection
                       </h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                         {Object.entries(settings.policies).map(([key, value]) => (
-                            <label 
+                         {Object.entries(settings.policies).map(([key, value]) => {
+                             const labels: Record<string, string> = {
+                               spam: 'Spam',
+                               hateSpeech: 'Hate Speech',
+                               harassment: 'Harassment',
+                               violence: 'Violence',
+                               sexualContent: 'Sexual Content',
+                               selfHarm: 'Self-harm' // Exact key from user request requirements
+                             };
+                             const label = labels[key] || key;
+
+                             return (
+                             <label 
                                 key={key} 
                                 className={`
                                     group relative flex items-center p-4 rounded-xl border cursor-pointer transition-all duration-200 select-none
@@ -580,8 +592,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 </div>
 
                                 <div className="ml-3 flex flex-col">
-                                    <span className={`font-semibold text-sm capitalize transition-colors ${value ? 'text-brand-900 dark:text-brand-100' : 'text-slate-700 dark:text-slate-300'}`}>
-                                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                                    <span className={`font-semibold text-sm transition-colors ${value ? 'text-brand-900 dark:text-brand-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                                        {label}
                                     </span>
                                     <span className={`text-xs mt-0.5 ${value ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400'}`}>
                                         {value ? 'Active' : 'Disabled'}
@@ -590,7 +602,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 
                                 {value && <div className="absolute inset-0 rounded-xl bg-brand-400/5 dark:bg-brand-400/10 pointer-events-none" />}
                             </label>
-                         ))}
+                         );
+                         })}
                       </div>
                    </div>
 
