@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import logo from '../logo.svg';
 import { Menu, X, LayoutDashboard, Sun, Moon, LogOut } from 'lucide-react';
 
 interface NavbarProps {
@@ -29,7 +30,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
             className="flex-shrink-0 flex items-center gap-3 cursor-pointer"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
-            <img src="/logo.png" alt="ShieldGram Logo" className="h-10 w-auto" />
+            <img src={logo} alt="ShieldGram Logo" className="h-10 w-auto" />
             <span className="font-bold text-xl text-slate-900 dark:text-white tracking-tight">ShieldGram</span>
           </div>
 
