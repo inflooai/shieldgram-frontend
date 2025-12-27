@@ -1,0 +1,21 @@
+# ShieldGram
+
+## Project Summary
+ShieldGram is an AI-powered SaaS platform designed to moderate Instagram comments. It automatically detects and hides spam, hate speech, harassment, and toxic content to protect brands and influencers.
+
+## Core Features
+- **AI Analysis**: Uses AI models to understand context, sarcasm, and nuance.
+- **Real-time Protection**: Scans comments in intervals as short as 30 seconds.
+- **Custom Policies**: Users can toggle specific protections (Spam, Hate Speech, Violence, Sexual Content) as well as completely custom policies
+- **Dashboard**: A comprehensive view of scanned comments, blocked threats, and analytics.
+- **Privacy First**: User data is not stored; analysis is ephemeral.
+
+## Pricing
+- **Standard ($5/mo)**: 10k comments/mo, 5 min scan interval.
+- **Plus ($10/mo)**: 25k comments/mo, 2 min scan interval.
+- **Premium ($25/mo)**: 100k comments/mo, <1 min scan interval, custom policies.
+- **Max ($100/mo)**: Unlimited comments, custom policies.
+
+## Links
+- **Website**: https://www.shieldgram.com
+- **Dashboard**: https://dashboard.shieldgram.com

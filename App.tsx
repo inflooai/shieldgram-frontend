@@ -7,11 +7,9 @@ import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
-
-type ViewState = 'landing' | 'dashboard' | 'auth';
+import { getAuthToken, removeAuthToken } from './utils/auth';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<ViewState>('landing');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
@@ -23,12 +21,17 @@ const App: React.FC = () => {
     return false;
   });
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Determine if we are on the 'dashboard' subdomain
+  const isDashboardSubdomain = typeof window !== 'undefined' && window.location.hostname.startsWith('dashboard.');
+
   // Check for login status on mount
   useEffect(() => {
-    const token = localStorage.getItem('user-token');
-    if (token) {
-      setCurrentView('dashboard');
-    }
+    const token = getAuthToken();
+    setIsLoggedIn(!!token);
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -43,78 +46,101 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
-  // Helper to handle protected routes
-  const handleProtectedNavigation = (targetView: ViewState) => {
-    const token = localStorage.getItem('user-token');
+  // Construct URL for the dashboard subdomain
+  const getDashboardUrl = () => {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = window.location.port ? `:${window.location.port}` : '';
     
-    // If user is already logged in, go to dashboard regardless of target if target was auth-related
-    if (token) {
-        if (targetView === 'auth') {
-            setCurrentView('dashboard');
-        } else {
-            setCurrentView('dashboard'); // Redirect to dashboard if logged in, unless explicit logout happens elsewhere
-        }
-        return;
-    }
+    // If we are already on dashboard (shouldn't happen given logic below, but safety first)
+    if (host.startsWith('dashboard.')) return `${protocol}//${host}${port}`;
+    
+    // Replace 'www.' if it exists, otherwise just prepend 'dashboard.'
+    const rootDomain = host.replace(/^www\./, '');
+    return `${protocol}//dashboard.${rootDomain}${port}`;
+  };
 
-    // If no token and target is protected (dashboard), redirect to auth
-    if (targetView === 'dashboard') {
-        setCurrentView('auth');
-        return;
-    }
+  // Construct URL for the landing page (root)
+  const getLandingUrl = () => {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    
+    // Remove dashboard subdomain
+    const rootDomain = host.replace(/^dashboard\./, '');
+    return `${protocol}//${rootDomain}${port}`;
+  };
 
-    // Otherwise navigate normally
-    setCurrentView(targetView);
+  const handleNavigateToDashboard = () => {
+    // If we are on landing, go to dashboard subdomain
+    if (!isDashboardSubdomain) {
+      window.location.href = getDashboardUrl();
+    }
   };
 
   const handleLoginSuccess = () => {
-    setCurrentView('dashboard');
+    setIsLoggedIn(true);
+    // Reload to ensure state is clean or if we need to redirect within dashboard
+    window.location.reload();
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user-token');
-    setCurrentView('landing');
+    removeAuthToken();
+    setIsLoggedIn(false);
+    // If on dashboard, logout might show auth page or redirect to landing
+    // Usually standard to redirect to landing or show auth
+    if (isDashboardSubdomain) {
+       window.location.href = getLandingUrl();
+    }
   };
 
-  if (currentView === 'auth') {
+  if (isLoading) {
+    return <div className="min-h-screen bg-slate-50 dark:bg-slate-950"></div>; // Prevent flash
+  }
+
+  // ==========================================
+  // DASHBOARD SUBDOMAIN RENDER
+  // ==========================================
+  if (isDashboardSubdomain) {
+    if (!isLoggedIn) {
+      return (
+        <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
+           <AuthPage 
+              onLoginSuccess={handleLoginSuccess} 
+              onCancel={() => window.location.href = getLandingUrl()} 
+           />
+        </div>
+      );
+    }
+
     return (
         <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
-             <AuthPage 
-                onLoginSuccess={handleLoginSuccess} 
-                onCancel={() => setCurrentView('landing')} 
-             />
+            <Dashboard 
+                onLogout={handleLogout}
+                isDarkMode={isDarkMode}
+                toggleTheme={toggleTheme}
+            />
         </div>
     );
   }
 
-  // Dashboard Isolated View - No Navbar or Footer from Landing Page
-  if (currentView === 'dashboard') {
-      return (
-          <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
-              <Dashboard 
-                  onLogout={handleLogout}
-                  isDarkMode={isDarkMode}
-                  toggleTheme={toggleTheme}
-              />
-          </div>
-      );
-  }
-
-  // Landing Page View
+  // ==========================================
+  // LANDING PAGE (ROOT) RENDER
+  // ==========================================
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-slate-950 transition-colors duration-300">
       <Navbar 
-        onNavigate={handleProtectedNavigation} 
-        currentView={currentView} 
+        onNavigateDashboard={handleNavigateToDashboard}
         isDarkMode={isDarkMode} 
         toggleTheme={toggleTheme}
+        isLoggedIn={isLoggedIn} // Pass this so Navbar can show "Dashboard" vs "Login"
         onLogout={handleLogout}
       />
       <main className="flex-grow">
-        <Hero onNavigate={handleProtectedNavigation} />
+        <Hero onNavigateDashboard={handleNavigateToDashboard} />
         <DemoSection />
         <Features />
-        <Pricing onNavigate={handleProtectedNavigation} />
+        <Pricing onNavigateDashboard={handleNavigateToDashboard} />
       </main>
       <Footer />
     </div>

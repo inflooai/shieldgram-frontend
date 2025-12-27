@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, ArrowRight, Loader2, CheckCircle2, RefreshCw } from 'lucide-react';
 // @ts-ignore - Importing from esm.sh
 import { CognitoUserPool, CognitoUser, AuthenticationDetails } from 'amazon-cognito-identity-js';
+import { setAuthToken } from '../utils/auth';
 
 interface AuthPageProps {
   onLoginSuccess: () => void;
@@ -135,7 +136,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     if (isMockMode) {
          console.warn('AWS Cognito Config missing or using placeholders. Using mock login for demo.');
          setTimeout(() => {
-             localStorage.setItem('user-token', 'shieldgram-dummy-jwt-token');
+             setAuthToken('shieldgram-dummy-jwt-token');
              setIsLoading(false);
              onLoginSuccess();
          }, 1000);
@@ -156,7 +157,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
       onSuccess: (result: any) => {
         setIsLoading(false);
         const accessToken = result.getAccessToken().getJwtToken();
-        localStorage.setItem('user-token', accessToken);
+        setAuthToken(accessToken);
         onLoginSuccess();
       },
       onFailure: (err: any) => {

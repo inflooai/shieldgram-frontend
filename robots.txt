@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Sitemap: https://www.shieldgram.com/sitemap.xml
+
+# Disallow crawling of the dashboard subdomain logic if referenced relatively
+Disallow: /dashboard/
+Disallow: /api/

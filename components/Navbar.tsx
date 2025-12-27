@@ -1,30 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Shield, Menu, X, LayoutDashboard, Sun, Moon, LogOut } from 'lucide-react';
 
 interface NavbarProps {
-  onNavigate: (view: 'landing' | 'dashboard' | 'auth') => void;
-  currentView: 'landing' | 'dashboard' | 'auth';
+  onNavigateDashboard: () => void;
   isDarkMode: boolean;
   toggleTheme: () => void;
-  onLogout?: () => void;
+  isLoggedIn: boolean;
+  onLogout: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, isDarkMode, toggleTheme, onLogout }) => {
+const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggleTheme, isLoggedIn, onLogout }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useEffect(() => {
-    setIsLoggedIn(!!localStorage.getItem('user-token'));
-  }, [currentView]); // Re-check on view change
-
-  const handleNavClick = (view: 'landing' | 'dashboard' | 'auth', sectionId?: string) => {
-    onNavigate(view);
+  const scrollToSection = (sectionId: string) => {
     setIsMenuOpen(false);
-    if (view === 'landing' && sectionId) {
-      setTimeout(() => {
-        const element = document.getElementById(sectionId);
-        if (element) element.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -35,7 +27,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, isDarkMode, to
           {/* Logo */}
           <div 
             className="flex-shrink-0 flex items-center gap-2 cursor-pointer"
-            onClick={() => handleNavClick('landing')}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
             <div className="bg-brand-600 p-1.5 rounded-lg">
               <Shield className="h-6 w-6 text-white" />
@@ -45,18 +37,10 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, isDarkMode, to
 
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center space-x-8">
-            <button onClick={() => handleNavClick('landing', 'features')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Features</button>
-            <button onClick={() => handleNavClick('landing', 'demo')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Live Demo</button>
-            <button onClick={() => handleNavClick('landing', 'pricing')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Pricing</button>
+            <button onClick={() => scrollToSection('features')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Features</button>
+            <button onClick={() => scrollToSection('demo')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Live Demo</button>
+            <button onClick={() => scrollToSection('pricing')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Pricing</button>
             
-            <button 
-              onClick={() => handleNavClick('dashboard')}
-              className={`flex items-center gap-2 font-medium transition-colors ${currentView === 'dashboard' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400'}`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </button>
-
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -67,20 +51,36 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, isDarkMode, to
             </button>
 
             {isLoggedIn ? (
-               <button 
-                 onClick={onLogout}
-                 className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-5 py-2 rounded-full font-medium transition-all"
-               >
-                 <LogOut className="w-4 h-4" />
-                 Sign Out
-               </button>
+               <div className="flex items-center gap-4">
+                 <button 
+                  onClick={onNavigateDashboard}
+                  className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
+                 >
+                   <LayoutDashboard className="w-4 h-4" />
+                   Dashboard
+                 </button>
+                 <button 
+                   onClick={onLogout}
+                   className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-5 py-2 rounded-full font-medium transition-all text-sm"
+                 >
+                   Sign Out
+                 </button>
+               </div>
             ) : (
-                <button 
-                  onClick={() => handleNavClick('auth')}
-                  className="bg-brand-600 hover:bg-brand-700 dark:bg-brand-600 dark:hover:bg-brand-500 text-white px-5 py-2 rounded-full font-medium transition-all shadow-sm hover:shadow-md"
-                >
-                  Get Started
-                </button>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={onNavigateDashboard}
+                    className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
+                  >
+                    Log In
+                  </button>
+                  <button 
+                    onClick={onNavigateDashboard}
+                    className="bg-brand-600 hover:bg-brand-700 dark:bg-brand-600 dark:hover:bg-brand-500 text-white px-5 py-2 rounded-full font-medium transition-all shadow-sm hover:shadow-md"
+                  >
+                    Get Started
+                  </button>
+                </div>
             )}
           </div>
 
@@ -107,25 +107,32 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, isDarkMode, to
       {isMenuOpen && (
         <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 absolute w-full shadow-lg">
           <div className="px-4 pt-2 pb-6 space-y-2">
-            <button onClick={() => handleNavClick('landing', 'features')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Features</button>
-            <button onClick={() => handleNavClick('landing', 'demo')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Live Demo</button>
-            <button onClick={() => handleNavClick('landing', 'pricing')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Pricing</button>
-            <button onClick={() => handleNavClick('dashboard')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Dashboard</button>
-            <div className="pt-4">
+            <button onClick={() => scrollToSection('features')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Features</button>
+            <button onClick={() => scrollToSection('demo')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Live Demo</button>
+            <button onClick={() => scrollToSection('pricing')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Pricing</button>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
               {isLoggedIn ? (
-                 <button 
-                  onClick={onLogout}
-                  className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white px-5 py-3 rounded-lg font-medium shadow-sm"
-                 >
-                   Sign Out
-                 </button>
+                 <>
+                   <button onClick={onNavigateDashboard} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">
+                      <div className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Go to Dashboard</div>
+                   </button>
+                   <button 
+                    onClick={onLogout}
+                    className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white px-5 py-3 rounded-lg font-medium shadow-sm"
+                   >
+                     Sign Out
+                   </button>
+                 </>
               ) : (
-                <button 
-                  onClick={() => handleNavClick('auth')}
-                  className="w-full bg-brand-600 hover:bg-brand-700 text-white px-5 py-3 rounded-lg font-medium shadow-sm"
-                >
-                  Get Started
-                </button>
+                <>
+                  <button onClick={onNavigateDashboard} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">Log In</button>
+                  <button 
+                    onClick={onNavigateDashboard}
+                    className="w-full bg-brand-600 hover:bg-brand-700 text-white px-5 py-3 rounded-lg font-medium shadow-sm"
+                  >
+                    Get Started
+                  </button>
+                </>
               )}
             </div>
           </div>

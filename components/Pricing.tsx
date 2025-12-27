@@ -2,17 +2,13 @@ import React from 'react';
 import { Check, Clock } from 'lucide-react';
 
 interface PricingProps {
-  onNavigate?: (view: 'landing' | 'dashboard' | 'auth') => void;
+  onNavigateDashboard: () => void;
 }
 
-const Pricing: React.FC<PricingProps> = ({ onNavigate }) => {
+const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
   
   const handlePlanClick = () => {
-      if (onNavigate) {
-          // If logged in, App.tsx handles redirection to dashboard.
-          // If not logged in, it goes to auth.
-          onNavigate('dashboard');
-      }
+      onNavigateDashboard();
   };
 
   return (

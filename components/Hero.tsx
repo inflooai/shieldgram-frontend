@@ -3,10 +3,10 @@ import { CheckCircle, ArrowRight } from 'lucide-react';
 import CommentSlideshow from './CommentSlideshow';
 
 interface HeroProps {
-  onNavigate?: (view: 'landing' | 'dashboard' | 'auth') => void;
+  onNavigateDashboard: () => void;
 }
 
-const Hero: React.FC<HeroProps> = ({ onNavigate }) => {
+const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
   const scrollToPricing = () => {
     const pricingSection = document.getElementById('pricing');
     if (pricingSection) {
@@ -45,7 +45,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigate }) => {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center mb-16">
               <button 
-                onClick={() => onNavigate && onNavigate('auth')}
+                onClick={onNavigateDashboard}
                 className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-brand-600 text-white rounded-full font-semibold text-lg hover:bg-slate-800 dark:hover:bg-brand-500 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-1"
               >
                 Start Free Trial <ArrowRight className="w-5 h-5" />
