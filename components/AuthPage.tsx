@@ -3,7 +3,8 @@ import { ArrowRight, Loader2, CheckCircle2, RefreshCw } from 'lucide-react';
 // @ts-ignore - Importing from esm.sh
 import { CognitoUserPool, CognitoUser, AuthenticationDetails } from 'amazon-cognito-identity-js';
 import { setAuthToken } from '../utils/auth';
-
+import logo from '../logo.svg';
+  
 interface AuthPageProps {
   onLoginSuccess: () => void;
   onCancel: () => void;
@@ -192,7 +193,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-12 transition-colors duration-300">
       <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-8">
         <div className="flex justify-center mb-8">
-            <img src="/logo.svg" alt="ShieldGram" className="h-16 w-auto" />
+            <img src={logo} alt="ShieldGram" className="h-16 w-auto" />
         </div>
 
         <h2 className="text-center text-2xl font-bold text-slate-900 dark:text-white mb-2">
