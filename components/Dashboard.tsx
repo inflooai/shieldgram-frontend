@@ -5,7 +5,7 @@ import {
   Check, RefreshCw, CreditCard, Download, Zap, ChevronDown, Plus
 } from 'lucide-react';
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
-import logo from "../logo.svg"
+import logo from "../logo.svg";
 
 interface DashboardProps {
   onLogout?: () => void;
