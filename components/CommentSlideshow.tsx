@@ -11,7 +11,7 @@ interface MockComment {
   time: string;
 }
 
-const mockComments: MockComment[] = [
+const initialComments: MockComment[] = [
   { id: 1, user: 'sarah_styles', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=sarah', text: 'Love this outfit! Where did you get it? 😍', status: 'approved', time: '2m' },
   { id: 2, user: 'crypto_king_99', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=crypto', text: 'DM me for 100x gains on Bitcoin! 🚀💰', status: 'hidden', risk: 'SPAM', time: '5m' },
   { id: 3, user: 'hater_123', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=hater', text: 'This looks terrible, delete your account.', status: 'hidden', risk: 'TOXIC', time: '12m' },
@@ -25,8 +25,34 @@ const CARD_HEIGHT = 100; // Height in px
 const GAP = 16; 
 
 const CommentSlideshow: React.FC = () => {
+  const [mockComments, setMockComments] = useState<MockComment[]>(initialComments);
   const [headIndex, setHeadIndex] = useState(0);
   const [processingState, setProcessingState] = useState<'idle' | 'scanning' | 'result' | 'blurring' | 'scrolling'>('idle');
+
+  // Pre-fetch avatars only once on mount to prevent repeated network calls
+  useEffect(() => {
+    const fetchAvatars = async () => {
+      const updatedComments = await Promise.all(
+        initialComments.map(async (c) => {
+          try {
+            const response = await fetch(c.avatar);
+            const blob = await response.blob();
+            const dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+            return { ...c, avatar: dataUrl };
+          } catch (e) {
+            return c; // Fallback to URL if fetch fails
+          }
+        })
+      );
+      setMockComments(updatedComments);
+    };
+
+    fetchAvatars();
+  }, []);
 
   // Display enough items to fill the container and handle scrolling
   const visibleCount = 5;
@@ -135,7 +161,7 @@ const CommentSlideshow: React.FC = () => {
 
           return (
             <div 
-              key={`${comment.id}-${headIndex}-${index}`}
+              key={`${comment.id}-${index}`}
               className={`
                 relative flex-shrink-0 p-4 rounded-2xl border transition-all duration-500 ease-out
                 ${cardStyle} ${scale} ${shadow}
