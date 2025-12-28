@@ -2,8 +2,6 @@ import { ModerationResult, CommentRiskLevel, PolicyType } from "../types";
 
 const LAMBDA_URL = process.env.LAMBDA_URL || "";
 
-console.log("LAMBDA_URL", LAMBDA_URL);
-
 export const analyzeCommentWithLambda = async (
   commentText: string, 
   selectedPolicies: PolicyType[]

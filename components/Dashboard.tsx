@@ -371,11 +371,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <div className="border-t border-slate-100 dark:border-slate-800 p-2">
                             <button 
                                 onClick={() => {
-                                   const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID || "2024506878093004";
-                                   const redirectUri = encodeURIComponent(import.meta.env.VITE_INSTAGRAM_REDIRECT_URI || "http://localhost:3000/");
-                                   const scope = "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights";
-                                   const authUrl = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
-                                   window.location.href = authUrl;
+                                   const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
+                                   if (authUrl) {
+                                       window.location.href = authUrl;
+                                   } else {
+                                       alert("Error: VITE_INSTAGRAM_AUTH_URL is not defined.");
+                                   }
                                    setIsAccountDropdownOpen(false);
                                 }}
 

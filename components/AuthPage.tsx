@@ -18,8 +18,6 @@ const COGNITO_CONFIG = {
   UserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID, 
   ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID
 };
-console.log('COGNITO_CONFIG:', COGNITO_CONFIG);
-console.log('ALL ENV:', import.meta.env);
 type AuthMode = 'signin' | 'signup' | 'verify';
 
 const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
