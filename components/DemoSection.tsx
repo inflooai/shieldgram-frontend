@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { analyzeComment } from '../services/geminiService';
+import { analyzeCommentWithLambda } from '../services/lambdaService';
 import { ModerationResult, CommentRiskLevel, PolicyType } from '../types';
 import { ShieldAlert, ShieldCheck, ShieldBan, Wand2, Loader2, Send, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 
@@ -100,7 +100,7 @@ const DemoSection: React.FC = () => {
     const policiesToUse: PolicyType[] = selectedPolicies.length > 0 ? selectedPolicies : ['General'];
 
     try {
-      const data = await analyzeComment(comment, policiesToUse);
+      const data = await analyzeCommentWithLambda(comment, policiesToUse);
       incrementUsage(); // Increment count on success
       setResult(data);
     } catch (err) {

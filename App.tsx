@@ -24,6 +24,8 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   // Determine if we are on the 'dashboard' subdomain
   const isDashboardSubdomain = typeof window !== 'undefined' && window.location.hostname.startsWith('dashboard.');
 
@@ -90,11 +92,12 @@ const App: React.FC = () => {
     // If on dashboard, logout might show auth page or redirect to landing
     // Usually standard to redirect to landing or show auth
     if (isDashboardSubdomain) {
+       setIsRedirecting(true);
        window.location.href = getLandingUrl();
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isRedirecting) {
     return <div className="min-h-screen bg-slate-50 dark:bg-slate-950"></div>; // Prevent flash
   }
 
