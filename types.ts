@@ -26,7 +26,7 @@ export interface DemoComment {
   timestamp: string;
 }
 
-export type PolicyType = 'General' | 'Spam' | 'Hate Speech' | 'Harassment' | 'Violence' | 'Sexual Content' | 'Self-harm';
+export type PolicyType = 'Spam' | 'Hate speech' | 'Sexual Content' | 'Harrassment' | 'Violence' | 'Self harm';
 
 export interface DashboardStat {
   label: string;

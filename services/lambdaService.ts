@@ -6,7 +6,7 @@ console.log("LAMBDA_URL", LAMBDA_URL);
 
 export const analyzeCommentWithLambda = async (
   commentText: string, 
-  selectedPolicies: PolicyType[] = ['General']
+  selectedPolicies: PolicyType[]
 ): Promise<ModerationResult> => {
   try {
     const policiesString = selectedPolicies.join(", ");

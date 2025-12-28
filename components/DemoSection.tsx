@@ -5,7 +5,7 @@ import { ShieldAlert, ShieldCheck, ShieldBan, Wand2, Loader2, Send, CheckSquare,
 
 const DemoSection: React.FC = () => {
   const [comment, setComment] = useState("");
-  const [selectedPolicies, setSelectedPolicies] = useState<PolicyType[]>(['General']);
+  const [selectedPolicies, setSelectedPolicies] = useState<PolicyType[]>([]);
   const [result, setResult] = useState<ModerationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,11 +13,11 @@ const DemoSection: React.FC = () => {
 
   const availablePolicies: PolicyType[] = [
     'Spam', 
-    'Hate Speech', 
-    'Harassment', 
-    'Violence', 
+    'Hate speech', 
     'Sexual Content', 
-    'Self-harm'
+    'Harrassment', 
+    'Violence', 
+    'Self harm'
   ];
 
   const togglePolicy = (policy: PolicyType) => {
@@ -97,7 +97,21 @@ const DemoSection: React.FC = () => {
     setIsLoading(true);
     setResult(null);
 
-    const policiesToUse: PolicyType[] = selectedPolicies.length > 0 ? selectedPolicies : ['General'];
+    // If no policies selected, mark as safe immediately without calling AI
+    if (selectedPolicies.length === 0) {
+      setTimeout(() => {
+        setResult({
+          riskLevel: CommentRiskLevel.SAFE,
+          confidenceScore: 100,
+          explanation: "No security policies are active. The comment is marked as safe by default.",
+          suggestedAction: "APPROVE"
+        });
+        setIsLoading(false);
+      }, 500);
+      return;
+    }
+
+    const policiesToUse: PolicyType[] = selectedPolicies;
 
     try {
       const data = await analyzeCommentWithLambda(comment, policiesToUse);
