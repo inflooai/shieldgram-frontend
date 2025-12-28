@@ -16,9 +16,8 @@ const App: React.FC = () => {
       if (savedTheme) {
         return savedTheme === 'dark';
       }
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
-    return false;
+    return false; // Default to light mode
   });
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);

@@ -212,7 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         address: "ShieldGram Corporate Office"
       },
       theme: {
-        color: "#0284c7" // brand-600
+        color: "#6bb8e6" // brand-600
       },
       modal: {
         ondismiss: function() {

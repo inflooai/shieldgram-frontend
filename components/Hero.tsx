@@ -39,14 +39,14 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
               Protect your community from <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400">toxic comments</span>
             </h1>
 
-            <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-400 mb-10 leading-relaxed">
-              ShieldGram automatically hides spam, hate speech, and inappropriate comments on Instagram using advanced AI models. Sleep soundly while we guard your brand.
+            <p className="font-outfit text-lg sm:text-xl text-slate-600 dark:text-slate-400 mb-10 leading-relaxed font-normal">
+              ShieldGram automatically sweeps away the spam and unwanted comments that clutter your Instagram posts. Keep your focus on what matters.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center mb-16">
               <button 
                 onClick={onNavigateDashboard}
-                className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-brand-600 text-white rounded-full font-semibold text-lg hover:bg-slate-800 dark:hover:bg-brand-500 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-1"
+                className="w-full sm:w-auto px-8 py-4 bg-brand-600 text-white rounded-full font-semibold text-lg hover:bg-brand-700 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-1"
               >
                 Start Free Trial <ArrowRight className="w-5 h-5" />
               </button>

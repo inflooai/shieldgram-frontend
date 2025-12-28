@@ -17,7 +17,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl mb-4">Simple, transparent pricing</h2>
           <p className="text-lg text-slate-600 dark:text-slate-400">
-            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">7-day free trial</span> (50 scans/day). No credit card required.
+            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">7-day free trial</span> (100 scans/day). No credit card required.
           </p>
         </div>
 
@@ -38,7 +38,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>1</strong> social account
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> ~5 min scan interval
+                <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> ~2 min scan interval
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Standard Spam Protection
@@ -71,7 +71,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> ~2 min scan interval
+                <Clock className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> ~1 min scan interval
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> Standard Spam Protection
