@@ -7,11 +7,15 @@ import {
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
 import logo from "../logo.svg";
 
+import { getAuthToken } from '../utils/auth';
+import { getDashboardInfo, saveDashboardControls, addInstagramAccount, AccountInfo } from '../services/dashboardService';
+
 interface DashboardProps {
   onLogout?: () => void;
   isDarkMode?: boolean;
   toggleTheme?: () => void;
 }
+
 
 type Tab = 'overview' | 'controls' | 'plan';
 type PlanType = 'standard' | 'plus' | 'premium' | 'max';
@@ -41,10 +45,8 @@ interface Account {
   handle: string;
 }
 
-const MOCK_ACCOUNTS: Account[] = [
-  { id: '1', name: 'ShieldGram HQ', handle: '@shieldgram_hq' },
-  { id: '2', name: 'Personal Brand', handle: '@alex_creates' }
-];
+const MOCK_ACCOUNTS: Account[] = [];
+
 
 // Plan definitions for the billing tab
 const PLANS = {
@@ -76,12 +78,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   
   // Account State
-  const [accounts] = useState<Account[]>(MOCK_ACCOUNTS);
-  const [currentAccount, setCurrentAccount] = useState<Account>(MOCK_ACCOUNTS[0]);
+  const [accounts, setAccounts] = useState<Account[]>(MOCK_ACCOUNTS);
+  const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   
+  // RAW Data for current account
+  const [rawAccountInfo, setRawAccountInfo] = useState<AccountInfo | null>(null);
+
   // Payment State
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
 
   // Data States
   const [stats, setStats] = useState<DashboardStats>({ scanned: 0, moderated: 0, protectionScore: 0 });
@@ -92,68 +98,143 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     customInstructions: ''
   });
 
-  // Load Data (Always Sample Data)
-  const loadData = async () => {
+  // Load Data
+  const loadData = async (initialLoad = false) => {
     setIsLoading(true);
-    // Simulate API latency
-    await new Promise(r => setTimeout(r, 600));
+    try {
+      const token = getAuthToken();
+      if (!token) return;
 
-    // Sample Data
-    setStats({
-      scanned: 452890,
-      moderated: 12405,
-      protectionScore: 98
-    });
-    setActivity([
-      {
-        id: '1',
-        author: 'spambot_9000',
-        text: 'Buy followers cheap! Link in bio!!!',
-        riskLevel: CommentRiskLevel.SPAM,
-        timestamp: '2 mins ago',
-        actionTaken: 'HIDDEN'
-      },
-      {
-        id: '2',
-        author: 'angry_user',
-        text: 'You are absolutely pathetic.',
-        riskLevel: CommentRiskLevel.TOXIC,
-        timestamp: '15 mins ago',
-        actionTaken: 'HIDDEN'
-      },
-      {
-        id: '3',
-        author: 'scam_artist',
-        text: 'DM me for investment opportunity',
-        riskLevel: CommentRiskLevel.SPAM,
-        timestamp: '1 hour ago',
-        actionTaken: 'HIDDEN'
-      },
-      {
-        id: '4',
-        author: 'troll_account',
-        text: 'Delete this garbage post.',
-        riskLevel: CommentRiskLevel.HARASSMENT,
-        timestamp: '3 hours ago',
-        actionTaken: 'HIDDEN'
+      const accountData = await getDashboardInfo(token);
+      
+      if (accountData.length > 0) {
+        const mappedAccounts = accountData.map(acc => ({
+            id: acc.account_id,
+            name: acc.account_name,
+            handle: `@${acc.account_name.toLowerCase().replace(/\s+/g, '_')}` // Mock handle
+        }));
+        setAccounts(mappedAccounts);
+
+        // Find current or set default
+        let selected = initialLoad ? accountData[0] : (accountData.find(a => a.account_id === currentAccount?.id) || accountData[0]);
+        
+        setCurrentAccount({
+            id: selected.account_id,
+            name: selected.account_name,
+            handle: `@${selected.account_name.toLowerCase().replace(/\s+/g, '_')}`
+        });
+        setRawAccountInfo(selected);
+
+        // Map policies string to object
+        const pList = selected.policies.split(',').map(s => s.trim());
+        setSettings({
+
+
+            plan: (selected.plan_type || 'standard') as PlanType,
+            policies: {
+                spam: pList.includes('spam'),
+                hateSpeech: pList.includes('hateSpeech'),
+                harassment: pList.includes('harassment'),
+                violence: pList.includes('violence'),
+                sexualContent: pList.includes('sexualContent'),
+                selfHarm: pList.includes('selfHarm')
+            },
+            customInstructions: selected.custom_policy || ''
+        });
       }
-    ]);
-    // We do NOT overwrite settings here to preserve plan changes made in the session
-    setIsLoading(false);
+
+      // Sample Stats Data (still mocked as per request to preserve some frontend state)
+      setStats({
+        scanned: 452890,
+        moderated: 12405,
+        protectionScore: 98
+      });
+      setActivity([
+        {
+          id: '1',
+          author: 'spambot_9000',
+          text: 'Buy followers cheap! Link in bio!!!',
+          riskLevel: CommentRiskLevel.SPAM,
+          timestamp: '2 mins ago',
+          actionTaken: 'HIDDEN'
+        },
+        // ... other mock activities
+      ]);
+    } catch (error) {
+        console.error("Failed to load dashboard data", error);
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
+
+    // Check for Instagram OAuth code in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      handleInstagramCallback(code);
+    }
   }, []);
 
-  const handleSaveSettings = async () => {
-    setIsSaving(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 1000));
-    setIsSaving(false);
-    setSaveMessage('Settings saved successfully!');
-    setTimeout(() => setSaveMessage(null), 3000);
+  const handleInstagramCallback = async (code: string) => {
+    setIsLoading(true);
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+
+      const result = await addInstagramAccount(token, code);
+      console.log("Account added:", result);
+      
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Refresh data
+      await loadData();
+      setSaveMessage('Account linked successfully!');
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error) {
+      console.error("Failed to link Instagram account", error);
+      alert("Failed to link Instagram account. Please check your console for details.");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+
+  const handleSaveSettings = async () => {
+    if (!currentAccount || !rawAccountInfo) return;
+
+    setIsSaving(true);
+    try {
+        const token = getAuthToken();
+        if (!token) throw new Error("No auth token");
+
+        const policiesStr = Object.entries(settings.policies)
+            .filter(([_, v]) => v)
+            .map(([k, _]) => k)
+            .join(', ');
+
+        await saveDashboardControls(
+            token,
+            currentAccount.id,
+            rawAccountInfo.owner_user_id,
+            policiesStr,
+            settings.plan,
+            settings.customInstructions
+        );
+
+        setSaveMessage('Settings saved successfully!');
+        setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error) {
+        console.error("Failed to save settings", error);
+        alert("Failed to save settings. Please try again.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
 
   const handleAction = (id: string, action: string) => {
     // Optimistic update
@@ -234,7 +315,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <img src={logo} alt="ShieldGram" className="h-8 w-auto" />
+             <img src={logo} alt="ShieldGram" className="h-[44px] w-auto" />
             <span className="font-bold text-lg text-slate-900 dark:text-white tracking-tight hidden sm:inline">ShieldGram <span className="text-slate-400 font-normal ml-1">Dashboard</span></span>
           </div>
 
@@ -246,13 +327,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                     className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:outline-none"
                 >
                     <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                        {currentAccount.name.substring(0,2).toUpperCase()}
+                        {currentAccount?.name.substring(0,2).toUpperCase() || '??'}
                     </div>
                     <div className="hidden md:block text-left mr-1">
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">{currentAccount.name}</p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-1.5">{currentAccount.handle}</p>
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">{currentAccount?.name || 'Loading...'}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-1.5">{currentAccount?.handle || ''}</p>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
+
                 </button>
 
                 {isAccountDropdownOpen && (
@@ -289,9 +371,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <div className="border-t border-slate-100 dark:border-slate-800 p-2">
                             <button 
                                 onClick={() => {
-                                   alert("Feature coming soon: Add Account Flow");
+                                   const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID || "2024506878093004";
+                                   const redirectUri = encodeURIComponent(import.meta.env.VITE_INSTAGRAM_REDIRECT_URI || "http://localhost:3000/");
+                                   const scope = "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights";
+                                   const authUrl = `https://www.instagram.com/oauth/authorize?force_reauth=true&client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
+                                   window.location.href = authUrl;
                                    setIsAccountDropdownOpen(false);
                                 }}
+
                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-medium group"
                             >
                                 <div className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-dashed border-slate-300 dark:border-slate-600 group-hover:border-slate-400 dark:group-hover:border-slate-500 transition-colors">
@@ -299,6 +386,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 </div>
                                 <span>Add New Account</span>
                             </button>
+
                         </div>
                     </div>
                 )}
