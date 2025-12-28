@@ -27,7 +27,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div 
-            className="flex-shrink-0 flex items-center gap-3 cursor-pointer"
+            className="flex-shrink-0 flex items-center gap-2 cursor-pointer"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
             <img src={logo} alt="ShieldGram Logo" className="h-[44px] w-auto" />

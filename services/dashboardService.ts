@@ -10,6 +10,7 @@ export interface AccountInfo {
   plan_type: string;
   policies: string;
   custom_policy: string;
+  profile_picture_url: string;
 }
 
 

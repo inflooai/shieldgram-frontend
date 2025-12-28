@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, ShieldCheck, ShieldAlert, Trash2, CheckCircle, Ban, 
   Shield, LogOut, Sun, Moon, LayoutDashboard, Sliders, Lock, Save, 
@@ -43,6 +43,7 @@ interface Account {
   id: string;
   name: string;
   handle: string;
+  profilePictureUrl?: string;
 }
 
 const MOCK_ACCOUNTS: Account[] = [];
@@ -72,7 +73,11 @@ const loadRazorpayScript = () => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as Tab;
+    return (['overview', 'controls', 'plan'] as Tab[]).includes(tab) ? tab : 'overview';
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -98,8 +103,48 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     customInstructions: ''
   });
 
+  // URL Sync
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+
+    if (params.get('tab') !== activeTab) {
+        params.set('tab', activeTab);
+        changed = true;
+    }
+
+    if (currentAccount && params.get('account') !== currentAccount.id) {
+        params.set('account', currentAccount.id);
+        changed = true;
+    }
+
+    if (changed) {
+        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({}, '', newUrl);
+    }
+  }, [activeTab, currentAccount]);
+
+  // Account Dropdown Reference for click-outside
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsAccountDropdownOpen(false);
+      }
+    };
+
+    if (isAccountDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAccountDropdownOpen]);
+
   // Load Data
-  const loadData = async (initialLoad = false) => {
+  const loadData = async (initialLoad = false, targetAccountId?: string) => {
     setIsLoading(true);
     try {
       const token = getAuthToken();
@@ -111,17 +156,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         const mappedAccounts = accountData.map(acc => ({
             id: acc.account_id,
             name: acc.account_name,
-            handle: `@${acc.account_name.toLowerCase().replace(/\s+/g, '_')}` // Mock handle
+            handle: `@${acc.account_name.toLowerCase().replace(/\s+/g, '_')}`, // Mock handle
+            profilePictureUrl: acc.profile_picture_url
         }));
         setAccounts(mappedAccounts);
 
         // Find current or set default
-        let selected = initialLoad ? accountData[0] : (accountData.find(a => a.account_id === currentAccount?.id) || accountData[0]);
+        const params = new URLSearchParams(window.location.search);
+        const urlAccountId = params.get('account');
+        
+        const effectiveAccountId = targetAccountId || urlAccountId || currentAccount?.id;
+        let selected = initialLoad ? (accountData.find(a => a.account_id === effectiveAccountId) || accountData[0]) : (accountData.find(a => a.account_id === effectiveAccountId) || accountData[0]);
         
         setCurrentAccount({
             id: selected.account_id,
             name: selected.account_name,
-            handle: `@${selected.account_name.toLowerCase().replace(/\s+/g, '_')}`
+            handle: `@${selected.account_name.toLowerCase().replace(/\s+/g, '_')}`,
+            profilePictureUrl: selected.profile_picture_url
         });
         setRawAccountInfo(selected);
 
@@ -175,6 +226,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     const code = urlParams.get('code');
     if (code) {
       handleInstagramCallback(code);
+    } else {
+        // If no code, we still check URL params for state sync if needed
+        // but loadData is already called with true above
     }
   }, []);
 
@@ -242,10 +296,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   };
 
   const handleSwitchAccount = (account: Account) => {
-    if (account.id === currentAccount.id) return;
+    if (currentAccount && account.id === currentAccount.id) {
+        setIsAccountDropdownOpen(false);
+        return;
+    }
     setCurrentAccount(account);
     setIsAccountDropdownOpen(false);
-    loadData(); // Re-fetch data for new account
+    loadData(false, account.id); // Re-fetch data for new account
   };
 
   const handleChangePlan = async (newPlan: PlanType) => {
@@ -314,20 +371,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       {/* Standalone Dashboard Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
              <img src={logo} alt="ShieldGram" className="h-[44px] w-auto" />
             <span className="font-bold text-lg text-slate-900 dark:text-white tracking-tight hidden sm:inline">ShieldGram <span className="text-slate-400 font-normal ml-1">Dashboard</span></span>
           </div>
 
           <div className="flex items-center gap-4">
              {/* Account Switcher */}
-             <div className="relative">
+              <div className="relative" ref={dropdownRef}>
                 <button
                     onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
                     className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:outline-none"
                 >
-                    <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                        {currentAccount?.name.substring(0,2).toUpperCase() || '??'}
+                    <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden">
+                        {currentAccount?.profilePictureUrl ? (
+                            <img src={currentAccount.profilePictureUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                            currentAccount?.name.substring(0,2).toUpperCase() || '??'
+                        )}
                     </div>
                     <div className="hidden md:block text-left mr-1">
                         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">{currentAccount?.name || 'Loading...'}</p>
@@ -352,12 +413,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                     }`}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border ${
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border overflow-hidden ${
                                             currentAccount.id === account.id 
                                             ? 'bg-brand-200 dark:bg-brand-800 border-brand-300 dark:border-brand-700' 
                                             : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
                                         }`}>
-                                            {account.name.substring(0,2).toUpperCase()}
+                                            {account.profilePictureUrl ? (
+                                                <img src={account.profilePictureUrl} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                account.name.substring(0,2).toUpperCase()
+                                            )}
                                         </div>
                                         <div className="text-left">
                                             <p>{account.name}</p>
@@ -716,7 +781,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                          value={settings.customInstructions}
                          onChange={(e) => setSettings({...settings, customInstructions: e.target.value})}
                          disabled={!canEditCustomPolicy}
-                         placeholder={canEditCustomPolicy ? "e.g. Treat comments mentioning 'competitor_name' as spam. Allow sarcasm." : "Upgrade to Premium to edit custom instructions."}
+                         placeholder={canEditCustomPolicy ? "e.g. Treat comments mentioning 'competitor_name' as spam." : "Upgrade to Premium to edit custom instructions."}
                          className="w-full h-32 p-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-slate-800 dark:text-slate-200 resize-none disabled:cursor-not-allowed"
                       />
                    </div>
