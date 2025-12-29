@@ -14,7 +14,12 @@ export interface AccountInfo {
 }
 
 
-export const getDashboardInfo = async (idToken: string): Promise<AccountInfo[]> => {
+export interface DashboardData {
+  accounts: AccountInfo[];
+  plan_type: string;
+}
+
+export const getDashboardInfo = async (idToken: string): Promise<DashboardData> => {
 
   try {
     const response = await fetch(`${DASHBOARD_API_URL}/dashboard-info`, {
@@ -24,14 +29,18 @@ export const getDashboardInfo = async (idToken: string): Promise<AccountInfo[]> 
         'Content-Type': 'application/json',
       },
     });
-
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
     }
 
     const data = await response.json();
-    return data.accounts || [];
+    return {
+      accounts: data.accounts || [],
+      plan_type: data.plan_type || 'standard'
+    };
   } catch (error) {
     console.error("Error fetching dashboard info:", error);
     throw error;
@@ -62,11 +71,11 @@ export const saveDashboardControls = async (
       }),
     });
 
-
-
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
     }
   } catch (error) {
     console.error("Error saving dashboard controls:", error);
@@ -87,12 +96,39 @@ export const addInstagramAccount = async (idToken: string, code: string): Promis
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
     }
 
     return await response.json();
   } catch (error) {
     console.error("Error adding Instagram account:", error);
+    throw error;
+  }
+};
+
+export const getInterventions = async (idToken: string, account_id: string): Promise<any[]> => {
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/interventions?account_id=${account_id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+
+    const data = await response.json();
+    return data.interventions || [];
+  } catch (error) {
+    console.error("Error fetching interventions:", error);
     throw error;
   }
 };

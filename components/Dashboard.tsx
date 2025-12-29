@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, ShieldCheck, ShieldAlert, Trash2, CheckCircle, Ban, 
   Shield, LogOut, Sun, Moon, LayoutDashboard, Sliders, Lock, Save, 
-  Check, RefreshCw, CreditCard, Download, Zap, ChevronDown, Plus
+  Check, RefreshCw, CreditCard, Download, Zap, ChevronDown, Plus,
+  AlertCircle
 } from 'lucide-react';
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
 import logo from "../logo.svg";
 
 import { getAuthToken } from '../utils/auth';
-import { getDashboardInfo, saveDashboardControls, addInstagramAccount, AccountInfo } from '../services/dashboardService';
+import { getDashboardInfo, saveDashboardControls, addInstagramAccount, getInterventions, AccountInfo } from '../services/dashboardService';
 
 interface DashboardProps {
   onLogout?: () => void;
@@ -80,7 +81,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>(MOCK_ACCOUNTS);
@@ -150,8 +156,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       const token = getAuthToken();
       if (!token) return;
 
-      const accountData = await getDashboardInfo(token);
+      const dashboardData = await getDashboardInfo(token);
+      const { accounts: accountData, plan_type } = dashboardData;
       
+      // Always update plan even if no accounts
+      setSettings(prev => ({
+          ...prev,
+          plan: (plan_type || 'standard') as PlanType
+      }));
+
       if (accountData.length > 0) {
         const mappedAccounts = accountData.map(acc => ({
             id: acc.account_id,
@@ -166,7 +179,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         const urlAccountId = params.get('account');
         
         const effectiveAccountId = targetAccountId || urlAccountId || currentAccount?.id;
-        let selected = initialLoad ? (accountData.find(a => a.account_id === effectiveAccountId) || accountData[0]) : (accountData.find(a => a.account_id === effectiveAccountId) || accountData[0]);
+        let selected = accountData.find(a => a.account_id === effectiveAccountId) || accountData[0];
         
         setCurrentAccount({
             id: selected.account_id,
@@ -178,10 +191,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
         // Map policies string to object
         const pList = selected.policies.split(',').map(s => s.trim());
-        setSettings({
-
-
-            plan: (selected.plan_type || 'standard') as PlanType,
+        setSettings(prev => ({
+            ...prev,
+            plan: (plan_type || 'standard') as PlanType, // Use global plan_type
             policies: {
                 spam: pList.includes('spam'),
                 hateSpeech: pList.includes('hateSpeech'),
@@ -191,31 +203,60 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                 selfHarm: pList.includes('selfHarm')
             },
             customInstructions: selected.custom_policy || ''
-        });
+        }));
+
+        // Fetch Real Interventions
+        try {
+            const interventionsData = await getInterventions(token, selected.account_id);
+            const mappedActivity: ModeratedCommentLog[] = interventionsData.map(item => ({
+                id: item.comment_id,
+                author: item.username || 'Anonymous', 
+                text: item.text,
+                riskLevel: (item.riskLevel || 'SAFE') as CommentRiskLevel,
+                timestamp: formatTimestamp(item.moderated_at),
+                actionTaken: item.suggested_action || 'NONE'
+            }));
+            setActivity(mappedActivity);
+        } catch (err) {
+            console.error("Failed to load interventions", err);
+            showToast("Failed to load recent interventions", "error");
+            setActivity([]);
+        }
+      } else {
+          // No accounts found
+          setAccounts([]);
+          setCurrentAccount(null);
       }
 
-      // Sample Stats Data (still mocked as per request to preserve some frontend state)
+      // Sample Stats Data (still mocked to preserve frontend state as requested)
       setStats({
         scanned: 452890,
         moderated: 12405,
         protectionScore: 98
       });
-      setActivity([
-        {
-          id: '1',
-          author: 'spambot_9000',
-          text: 'Buy followers cheap! Link in bio!!!',
-          riskLevel: CommentRiskLevel.SPAM,
-          timestamp: '2 mins ago',
-          actionTaken: 'HIDDEN'
-        },
-        // ... other mock activities
-      ]);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Failed to load dashboard data", error);
+        if (error.status === 401 || error.status === 403) {
+            showToast("Session expired. Logging out...", "error");
+            setTimeout(() => onLogout?.(), 2000);
+        } else {
+            showToast("Failed to load dashboard data", "error");
+        }
     } finally {
         setIsLoading(false);
     }
+  };
+
+  // Helper to format timestamp
+  const formatTimestamp = (ts: number | string) => {
+    if (!ts) return 'Unknown';
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - Number(ts);
+    
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
   };
 
   useEffect(() => {
@@ -246,11 +287,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       
       // Refresh data
       await loadData();
-      setSaveMessage('Account linked successfully!');
-      setTimeout(() => setSaveMessage(null), 3000);
-    } catch (error) {
+      showToast('Account linked successfully!');
+    } catch (error: any) {
       console.error("Failed to link Instagram account", error);
-      alert("Failed to link Instagram account. Please check your console for details.");
+      if (error.status === 401 || error.status === 403) {
+          showToast("Session expired. Logging out...", "error");
+          setTimeout(() => onLogout?.(), 2000);
+      } else {
+          showToast(error.message || "Failed to link Instagram account", "error");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -279,11 +324,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             settings.customInstructions
         );
 
-        setSaveMessage('Settings saved successfully!');
-        setTimeout(() => setSaveMessage(null), 3000);
-    } catch (error) {
+        showToast('Settings saved successfully!');
+    } catch (error: any) {
         console.error("Failed to save settings", error);
-        alert("Failed to save settings. Please try again.");
+        if (error.status === 401 || error.status === 403) {
+            showToast("Session expired. Logging out...", "error");
+            setTimeout(() => onLogout?.(), 2000);
+        } else {
+            showToast("Failed to save settings: " + (error.message || "Unknown error"), "error");
+        }
     } finally {
         setIsSaving(false);
     }
@@ -314,7 +363,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     const res = await loadRazorpayScript();
 
     if (!res) {
-      alert('Razorpay SDK failed to load. Please check your internet connection.');
+      showToast('Razorpay SDK failed to load. Please check your internet connection.', 'error');
       setIsProcessingPayment(false);
       return;
     }
@@ -338,8 +387,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         // Simulate backend verification success
         setSettings(prev => ({ ...prev, plan: newPlan }));
         setIsProcessingPayment(false);
-        setSaveMessage(`Subscription updated to ${PLANS[newPlan].label}!`);
-        setTimeout(() => setSaveMessage(null), 3000);
+        showToast(`Subscription updated to ${PLANS[newPlan].label}!`);
       },
       prefill: {
         name: "ShieldGram User",
@@ -381,21 +429,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
               <div className="relative" ref={dropdownRef}>
                 <button
                     onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
-                    className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:outline-none"
+                    className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-all border border-transparent focus:outline-none ${
+                        !currentAccount ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
+                    }`}
                 >
-                    <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden">
+                    <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden shrink-0">
                         {currentAccount?.profilePictureUrl ? (
                             <img src={currentAccount.profilePictureUrl} alt="" className="w-full h-full object-cover" />
                         ) : (
-                            currentAccount?.name.substring(0,2).toUpperCase() || '??'
+                            currentAccount ? currentAccount.name.substring(0,2).toUpperCase() : <Shield className="w-4 h-4" />
                         )}
                     </div>
                     <div className="hidden md:block text-left mr-1">
-                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">{currentAccount?.name || 'Loading...'}</p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-1.5">{currentAccount?.handle || ''}</p>
+                        <p className={`text-sm font-semibold leading-none ${!currentAccount ? 'text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                            {currentAccount?.name || (isLoading ? 'Loading...' : 'Select Account')}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-1.5">
+                            {currentAccount?.handle || (isLoading ? '' : 'None active')}
+                        </p>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
-
                 </button>
 
                 {isAccountDropdownOpen && (
@@ -440,7 +493,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                    if (authUrl) {
                                        window.location.href = authUrl;
                                    } else {
-                                       alert("Error: VITE_INSTAGRAM_AUTH_URL is not defined.");
+                                       showToast("Error: VITE_INSTAGRAM_AUTH_URL is not defined.", "error");
                                    }
                                    setIsAccountDropdownOpen(false);
                                 }}
@@ -524,10 +577,64 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       <main className="flex-grow py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
+          {notification && (
+            <div className={`fixed top-24 right-4 sm:right-8 z-50 flex items-center gap-2 text-sm font-medium px-4 py-3 rounded-lg shadow-xl border animate-slide-in max-w-[calc(100vw-2rem)] sm:max-w-md ${
+                notification.type === 'success'
+                ? 'text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/90 border-green-200 dark:border-green-800'
+                : 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/90 border-red-200 dark:border-red-800'
+            }`}>
+                {notification.type === 'success' ? <CheckCircle className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />} 
+                <span className="truncate">{notification.message}</span>
+            </div>
+          )}
+
           {isLoading ? (
-             <div className="flex justify-center items-center h-64">
-                <RefreshCw className="w-8 h-8 text-brand-600 animate-spin" />
+             <div className="flex flex-col justify-center items-center h-96 gap-4">
+                <div className="relative">
+                    <div className="w-16 h-16 border-4 border-brand-100 dark:border-brand-900 rounded-full border-t-brand-600 animate-spin"></div>
+                    <Shield className="w-6 h-6 text-brand-600 absolute inset-0 m-auto" />
+                </div>
+                <p className="text-slate-500 font-medium animate-pulse">Syncing your protection...</p>
              </div>
+          ) : accounts.length === 0 ? (
+            <div className="max-w-4xl mx-auto text-center py-20 px-6 animate-fade-in">
+                 <div className="w-24 h-24 bg-brand-50 dark:bg-brand-900/20 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3 shadow-inner text-brand-600">
+                    <ShieldCheck className="w-12 h-12" />
+                 </div>
+                 <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Ready to Secure Your Growth?</h2>
+                 <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                    Link your Instagram account to start automated AI moderation. ShieldGram protects your brand from spam and toxicity 24/7.
+                 </p>
+                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <button 
+                        onClick={() => {
+                            const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
+                            if (authUrl) window.location.href = authUrl;
+                            else showToast("Auth URL not configured", "error");
+                        }}
+                        className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
+                    >
+                         <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Connect Instagram
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('plan')}
+                        className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                    >
+                         Manage Plan
+                    </button>
+                 </div>
+                 <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-8 opacity-60">
+                    <div className="flex items-center gap-3 justify-center">
+                        <Zap className="w-5 h-5 text-brand-500" /> <span className="text-sm font-medium">Real-time AI</span>
+                    </div>
+                    <div className="flex items-center gap-3 justify-center">
+                        <Lock className="w-5 h-5 text-purple-500" /> <span className="text-sm font-medium">Spam-free feed</span>
+                    </div>
+                    <div className="flex items-center gap-3 justify-center">
+                        <ShieldAlert className="w-5 h-5 text-red-500" /> <span className="text-sm font-medium">Policy Enforced</span>
+                    </div>
+                 </div>
+            </div>
           ) : (
             <>
               {/* --- OVERVIEW TAB --- */}
@@ -535,15 +642,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                 <div className="animate-fade-in">
                   <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Overview</h1>
-                    <span className="text-xs font-mono text-slate-400 flex items-center gap-2">
-                       <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${
-                         settings.plan === 'max' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
-                         settings.plan === 'premium' ? 'bg-brand-100 text-brand-700 border-brand-200' :
-                         'bg-slate-100 text-slate-600 border-slate-200'
-                       }`}>
-                         {settings.plan} Plan
-                       </span>
-                    </span>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => loadData()}
+                            disabled={isLoading}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-200 dark:hover:border-brand-800 transition-all shadow-sm group"
+                            title="Refresh Dashboard"
+                        >
+                            <RefreshCw className={`w-4 h-4 group-hover:rotate-180 transition-transform duration-500 ${isLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <span className="text-xs font-mono text-slate-400 flex items-center gap-2">
+                           <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${
+                             settings.plan === 'max' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
+                             settings.plan === 'premium' ? 'bg-brand-100 text-brand-700 border-brand-200' :
+                             'bg-slate-100 text-slate-600 border-slate-200'
+                           }`}>
+                             {settings.plan} Plan
+                           </span>
+                        </span>
+                    </div>
                   </div>
 
                   {/* Stats Grid */}
@@ -606,16 +723,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                           {activity.map((comment) => (
                             <div key={comment.id} className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors">
                               <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold shrink-0">
-                                    {comment.author[0].toUpperCase()}
-                                </div>
                                 <div>
                                     <div className="flex items-center gap-2">
                                       <span className="font-semibold text-slate-900 dark:text-slate-100">{comment.author}</span>
                                       <span className="text-xs text-slate-400 dark:text-slate-500">{comment.timestamp}</span>
                                     </div>
-                                    <p className="text-slate-600 dark:text-slate-300 mt-1 text-sm bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700 italic">
-                                      "{comment.text}"
+                                    <p className="text-slate-600 dark:text-slate-300 mt-1 text-sm bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
+                                      {comment.text}
                                     </p>
                                     <div className="flex items-center gap-2 mt-2">
                                       {comment.riskLevel !== CommentRiskLevel.SAFE && (
@@ -638,21 +752,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 <button 
                                     onClick={() => handleAction(comment.id, 'APPROVE')}
                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                                    title="Approve (False Positive)"
+                                    title="Mark as Safe (False Positive)"
                                 >
                                     <CheckCircle className="w-5 h-5" />
                                 </button>
                                 <button 
                                     onClick={() => handleAction(comment.id, 'DELETE')}
-                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                    title="Delete Permanently"
+                                    disabled={comment.actionTaken === 'DELETE'}
+                                    className={`p-2 rounded-lg transition-colors ${
+                                        comment.actionTaken === 'DELETE' 
+                                        ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed' 
+                                        : 'text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                    }`}
+                                    title={comment.actionTaken === 'DELETE' ? "Permanently Deleted" : "Delete Comment"}
                                 >
                                     <Trash2 className="w-5 h-5" />
                                 </button>
                                 <button 
                                     onClick={() => handleAction(comment.id, 'BAN')}
                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                    title="Ban User"
+                                    title="Restrict/Ban User"
                                 >
                                     <Ban className="w-5 h-5" />
                                 </button>
@@ -675,9 +794,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                    <div className="flex items-center justify-between mb-8">
                       <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Moderation Policy</h1>
                       
-                      {saveMessage && (
+                      {notification && notification.type === 'success' && (
                         <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-3 py-1 rounded-full animate-fade-in">
-                           <Check className="w-4 h-4" /> {saveMessage}
+                           <Check className="w-4 h-4" /> {notification.message}
                         </div>
                       )}
                    </div>
@@ -802,12 +921,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
               {/* --- PLAN & BILLING TAB --- */}
               {activeTab === 'plan' && (
                   <div className="animate-fade-in max-w-5xl mx-auto">
-                    
-                    {saveMessage && (
-                        <div className="fixed top-24 right-8 z-50 flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/40 px-4 py-3 rounded-lg shadow-lg border border-green-200 dark:border-green-800 animate-slide-in">
-                            <CheckCircle className="w-5 h-5" /> {saveMessage}
-                        </div>
-                    )}
                     
                     {/* Payment Overlay */}
                     {isProcessingPayment && (
