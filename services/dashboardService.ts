@@ -108,9 +108,9 @@ export const addInstagramAccount = async (idToken: string, code: string): Promis
   }
 };
 
-export const getInterventions = async (idToken: string, account_id: string): Promise<any[]> => {
+export const getInterventions = async (idToken: string, account_id: string, limit: number = 10): Promise<any[]> => {
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/interventions?account_id=${account_id}`, {
+    const response = await fetch(`${DASHBOARD_API_URL}/interventions?account_id=${account_id}&limit=${limit}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,

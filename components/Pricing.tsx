@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, Users } from 'lucide-react';
+import { Check, Users, Shield } from 'lucide-react';
 
 interface PricingProps {
   onNavigateDashboard: () => void;
@@ -38,9 +38,6 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>1</strong> social account
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> ~2 min scan interval
-              </li>
-              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Standard Spam Protection
               </li>
             </ul>
@@ -68,10 +65,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>25k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
-              </li>
-              <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> ~1 min scan interval
+                <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>2</strong> social accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> Standard Spam Protection
@@ -90,7 +84,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Premium</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For agencies & brands</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$25</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">$35</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
@@ -98,10 +92,10 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>100k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>10</strong> social accounts
+                <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> &lt; 1 min scan interval
+                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Multi-modal AI inference
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Custom Moderation Policies
@@ -125,13 +119,13 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             </div>
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>Unlimited</strong> comments
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>250k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>Unlimited</strong> accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Clock className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> &lt; 1 min scan interval
+                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Multi-modal AI inference
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Custom Moderation Policies

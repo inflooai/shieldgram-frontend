@@ -53,9 +53,9 @@ const MOCK_ACCOUNTS: Account[] = [];
 // Plan definitions for the billing tab
 const PLANS = {
   standard: { price: 5, label: 'Standard', features: ['10k comments/mo', '1 social account', 'Standard Protection'] },
-  plus: { price: 10, label: 'Plus', features: ['25k comments/mo', '5 social accounts', 'Faster Scanning'] },
-  premium: { price: 25, label: 'Premium', features: ['100k comments/mo', '10 social accounts', 'Custom Policies'] },
-  max: { price: 100, label: 'Max', features: ['Unlimited comments', 'Unlimited accounts', 'Priority Support'] }
+  plus: { price: 10, label: 'Plus', features: ['25k comments/mo', '2 social accounts', 'Standard Protection'] },
+  premium: { price: 35, label: 'Premium', features: ['100k comments/mo', '5 social accounts', 'Multi-modal AI', 'Custom Policies'] },
+  max: { price: 100, label: 'Max', features: ['250k comments/mo', 'Unlimited accounts', 'Multi-modal AI', 'Custom Policies'] }
 };
 
 // Helper to load Razorpay SDK
@@ -80,6 +80,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     return (['overview', 'controls', 'plan'] as Tab[]).includes(tab) ? tab : 'overview';
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingInterventions, setIsLoadingInterventions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -103,6 +104,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   // Data States
   const [stats, setStats] = useState<DashboardStats>({ scanned: 0, moderated: 0, protectionScore: 0 });
   const [activity, setActivity] = useState<ModeratedCommentLog[]>([]);
+  const [interventionsLimit, setInterventionsLimit] = useState(10);
   const [settings, setSettings] = useState<UserSettings>({
     plan: 'standard', // Default start plan
     policies: { spam: true, hateSpeech: true, harassment: false, violence: false, sexualContent: false, selfHarm: false },
@@ -205,23 +207,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             customInstructions: selected.custom_policy || ''
         }));
 
-        // Fetch Real Interventions
-        try {
-            const interventionsData = await getInterventions(token, selected.account_id);
-            const mappedActivity: ModeratedCommentLog[] = interventionsData.map(item => ({
-                id: item.comment_id,
-                author: item.username || 'Anonymous', 
-                text: item.text,
-                riskLevel: (item.riskLevel || 'SAFE') as CommentRiskLevel,
-                timestamp: formatTimestamp(item.moderated_at),
-                actionTaken: item.suggested_action || 'NONE'
-            }));
-            setActivity(mappedActivity);
-        } catch (err) {
-            console.error("Failed to load interventions", err);
-            showToast("Failed to load recent interventions", "error");
-            setActivity([]);
-        }
+        await fetchInterventions(selected.account_id, interventionsLimit);
       } else {
           // No accounts found
           setAccounts([]);
@@ -246,6 +232,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         setIsLoading(false);
     }
   };
+  const fetchInterventions = async (accountId: string, limit: number) => {
+    setIsLoadingInterventions(true);
+    try {
+        const token = getAuthToken();
+        if (!token) return;
+
+        const interventionsData = await getInterventions(token, accountId, limit);
+        const mappedActivity: ModeratedCommentLog[] = interventionsData.map(item => ({
+            id: item.comment_id,
+            author: item.username || 'Anonymous', 
+            text: item.text,
+            riskLevel: (item.riskLevel || 'SAFE') as CommentRiskLevel,
+            timestamp: formatTimestamp(item.moderated_at),
+            actionTaken: item.suggested_action || 'NONE'
+        }));
+        setActivity(mappedActivity);
+    } catch (err) {
+        console.error("Failed to load interventions", err);
+        showToast("Failed to load recent interventions", "error");
+    } finally {
+        setIsLoadingInterventions(false);
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (!currentAccount) return;
+    const newLimit = interventionsLimit + 10;
+    setInterventionsLimit(newLimit);
+    fetchInterventions(currentAccount.id, newLimit);
+  };
 
   // Helper to format timestamp
   const formatTimestamp = (ts: number | string) => {
@@ -258,6 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
   };
+
 
   useEffect(() => {
     loadData(true);
@@ -713,7 +730,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
                   {/* Recent Activity */}
                   <div className="mb-8">
-                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Recent Automated Interventions</h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Recent Automated Interventions</h2>
+                    </div>
                     {activity.length === 0 ? (
                        <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 border-dashed">
                           <p className="text-slate-500">No activity logged yet.</p>
@@ -781,8 +800,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       </div>
                     )}
                     
-                    <button className="w-full py-3 text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-medium border border-dashed border-slate-300 dark:border-slate-700 rounded-lg hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all mt-4">
-                        Load More History
+                    <button 
+                      onClick={handleLoadMore}
+                      disabled={isLoadingInterventions}
+                      className="w-full py-3 text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-medium border border-dashed border-slate-300 dark:border-slate-700 rounded-lg hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all mt-4 flex items-center justify-center gap-2"
+                    >
+                        {isLoadingInterventions ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-slate-300 border-t-brand-600 animate-spin rounded-full"></div>
+                            Loading...
+                          </>
+                        ) : (
+                          "Load More History"
+                        )}
                     </button>
                   </div>
                 </div>
