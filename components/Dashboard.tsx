@@ -3,13 +3,21 @@ import {
   BarChart3, ShieldCheck, ShieldAlert, Trash2, CheckCircle, Ban, 
   Shield, LogOut, Sun, Moon, LayoutDashboard, Sliders, Lock, Save, 
   Check, RefreshCw, CreditCard, Download, Zap, ChevronDown, Plus,
-  AlertCircle
+  AlertCircle, Target, Edit2
 } from 'lucide-react';
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
 import logo from "../logo.svg";
 
 import { getAuthToken } from '../utils/auth';
-import { getDashboardInfo, saveDashboardControls, addInstagramAccount, getInterventions, AccountInfo } from '../services/dashboardService';
+import { 
+  getDashboardInfo, 
+  saveDashboardControls, 
+  addInstagramAccount, 
+  getInterventions, 
+  AccountInfo,
+  saveCustomPolicy as saveCustomPolicyApi,
+  deleteCustomPolicy as deleteCustomPolicyApi
+} from '../services/dashboardService';
 
 interface DashboardProps {
   onLogout?: () => void;
@@ -38,6 +46,9 @@ interface UserSettings {
     selfHarm: boolean;
   };
   customInstructions: string;
+  confidenceThreshold: number;
+  selectedCustomPolicies: string[];
+  customPolicyDescriptions: Record<string, string>; // policy_name -> description
 }
 
 interface Account {
@@ -52,10 +63,10 @@ const MOCK_ACCOUNTS: Account[] = [];
 
 // Plan definitions for the billing tab
 const PLANS = {
-  standard: { price: 5, label: 'Standard', features: ['10k comments/mo', '1 social account', 'Standard Protection'] },
-  plus: { price: 10, label: 'Plus', features: ['25k comments/mo', '2 social accounts', 'Standard Protection'] },
-  premium: { price: 35, label: 'Premium', features: ['100k comments/mo', '5 social accounts', 'Multi-modal AI', 'Custom Policies'] },
-  max: { price: 100, label: 'Max', features: ['250k comments/mo', 'Unlimited accounts', 'Multi-modal AI', 'Custom Policies'] }
+  standard: { price: 5, label: 'Standard', features: ['5k comments/mo', '1 social account', 'Standard Protection'] },
+  plus: { price: 15, label: 'Plus', features: ['20k comments/mo', '2 social accounts', 'Standard Protection'] },
+  premium: { price: 30, label: 'Premium', features: ['50k comments/mo', '5 social accounts', 'Multi-modal AI', 'Custom Policies'] },
+  max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Multi-modal AI', 'Custom Policies'] }
 };
 
 // Helper to load Razorpay SDK
@@ -108,8 +119,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [settings, setSettings] = useState<UserSettings>({
     plan: 'standard', // Default start plan
     policies: { spam: true, hateSpeech: true, harassment: false, violence: false, sexualContent: false, selfHarm: false },
-    customInstructions: ''
+    customInstructions: '',
+    confidenceThreshold: 80,
+    selectedCustomPolicies: [],
+    customPolicyDescriptions: {}
   });
+
+  // Custom Policy Form State
+  const [isCustomPolicyFormOpen, setIsCustomPolicyFormOpen] = useState(false);
+  const [editingPolicyName, setEditingPolicyName] = useState<string | null>(null);
+  const [newPolicyName, setNewPolicyName] = useState('');
+  const [newPolicyCondition, setNewPolicyCondition] = useState('');
+  const [newPolicyAction, setNewPolicyAction] = useState('spam');
 
   // URL Sync
   useEffect(() => {
@@ -204,7 +225,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                 sexualContent: pList.includes('sexualContent'),
                 selfHarm: pList.includes('selfHarm')
             },
-            customInstructions: selected.custom_policy || ''
+            customInstructions: selected.custom_policy || '', // Legacy/Standalone field (if still used)
+            confidenceThreshold: selected.confidence_threshold || 80,
+            selectedCustomPolicies: (() => {
+                try {
+                    const parsed = JSON.parse(selected.custom_policy || '[]');
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            })(),
+            customPolicyDescriptions: (selected.custom_policy_definitions || []).reduce((acc: any, d: any) => {
+                acc[d.policy_name] = d.description;
+                return acc;
+            }, {})
         }));
 
         await fetchInterventions(selected.account_id, interventionsLimit);
@@ -338,7 +372,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             rawAccountInfo.owner_user_id,
             policiesStr,
             settings.plan,
-            settings.customInstructions
+            JSON.stringify(settings.selectedCustomPolicies),
+            settings.confidenceThreshold
         );
 
         showToast('Settings saved successfully!');
@@ -353,6 +388,86 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     } finally {
         setIsSaving(false);
     }
+  };
+
+  const handleSaveCustomPolicy = async () => {
+    if (!currentAccount || !newPolicyName || !newPolicyCondition) return;
+    
+    const structuredDescription = `Treat comments with ${newPolicyCondition} as ${newPolicyAction}`;
+    if (structuredDescription.length > 100) {
+        showToast("Description is too long (max 100 characters combined)", "error");
+        return;
+    }
+
+    try {
+        const token = getAuthToken();
+        if (!token) throw new Error("No auth token");
+
+        setIsSaving(true);
+        await saveCustomPolicyApi(token, currentAccount.id, newPolicyName, structuredDescription);
+        
+        // Refresh local state
+        setSettings(prev => ({
+            ...prev,
+            customPolicyDescriptions: {
+                ...prev.customPolicyDescriptions,
+                [newPolicyName]: structuredDescription
+            }
+        }));
+
+        setIsCustomPolicyFormOpen(false);
+        setNewPolicyName('');
+        setNewPolicyCondition('');
+        setNewPolicyAction('spam');
+        setEditingPolicyName(null);
+        showToast("Custom policy saved successfully");
+    } catch (error: any) {
+        if (error.status === 403 && settings.plan === 'premium') {
+            showToast("Limit reached. Upgrade to Max for up to 20 custom policies.", "error");
+        } else {
+            showToast(error.message || "Failed to save custom policy", "error");
+        }
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleDeleteCustomPolicy = async (policyName: string) => {
+    if (!currentAccount) return;
+
+    try {
+        const token = getAuthToken();
+        if (!token) throw new Error("No auth token");
+
+        setIsSaving(true);
+        await deleteCustomPolicyApi(token, currentAccount.id, policyName);
+        
+        // Refresh local state
+        setSettings(prev => {
+            const nextDefs = { ...prev.customPolicyDescriptions };
+            delete nextDefs[policyName];
+            return {
+                ...prev,
+                selectedCustomPolicies: prev.selectedCustomPolicies.filter(p => p !== policyName),
+                customPolicyDescriptions: nextDefs
+            };
+        });
+
+        showToast("Custom policy deleted");
+    } catch (error: any) {
+        showToast(error.message || "Failed to delete custom policy", "error");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const toggleCustomPolicy = (policyName: string) => {
+      setSettings(prev => ({
+          ...prev,
+          selectedCustomPolicies: prev.selectedCustomPolicies.includes(policyName)
+            ? prev.selectedCustomPolicies.filter(p => p !== policyName)
+            : [...prev.selectedCustomPolicies, policyName]
+      }));
   };
 
 
@@ -908,32 +1023,247 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                          );
                          })}
                       </div>
+
                    </div>
 
-                   <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative ${!canEditCustomPolicy ? 'opacity-70' : ''}`}>
-                      {!canEditCustomPolicy && (
-                         <div className="absolute inset-0 z-10 bg-slate-50/50 dark:bg-slate-900/50 backdrop-blur-[1px] rounded-xl flex items-center justify-center cursor-not-allowed">
-                            <div className="bg-white dark:bg-slate-800 p-3 rounded-full shadow-lg">
-                               <Lock className="w-6 h-6 text-slate-400" />
-                            </div>
-                         </div>
-                      )}
-                      
-                      <h3 className="font-semibold text-lg mb-2 text-slate-900 dark:text-white flex items-center gap-2">
-                         <Sliders className="w-5 h-5 text-purple-500" /> Custom Instructions
-                      </h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                         Provide specific instructions to the AI about what constitutes a violation for your specific brand.
-                      </p>
-                      
-                      <textarea
-                         value={settings.customInstructions}
-                         onChange={(e) => setSettings({...settings, customInstructions: e.target.value})}
-                         disabled={!canEditCustomPolicy}
-                         placeholder={canEditCustomPolicy ? "e.g. Treat comments mentioning 'competitor_name' as spam." : "Upgrade to Premium to edit custom instructions."}
-                         className="w-full h-32 p-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all text-slate-800 dark:text-slate-200 resize-none disabled:cursor-not-allowed"
-                      />
-                   </div>
+
+                    {/* Custom Policies Section */}
+                    <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative ${!canEditCustomPolicy ? 'opacity-70' : ''}`}>
+                       <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                             <Sliders className="w-5 h-5 text-purple-500" /> Custom Policies
+                          </h3>
+                          {canEditCustomPolicy && (
+                             <button
+                                onClick={() => {
+                                   setNewPolicyName('');
+                                   setNewPolicyCondition('');
+                                   setNewPolicyAction('spam');
+                                   setEditingPolicyName(null);
+                                   setIsCustomPolicyFormOpen(true);
+                                }}
+                                className="flex items-center gap-1.5 text-xs font-bold bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 px-3 py-2 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-all border border-brand-200 dark:border-brand-800/50 uppercase tracking-tight"
+                             >
+                                <Plus className="w-3.5 h-3.5" /> Add New Policy
+                             </button>
+                          )}
+                       </div>
+                       
+                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                          Define and toggle custom moderation rules tailored to your brand's unique needs.
+                       </p>
+
+                       {!canEditCustomPolicy ? (
+                          <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 flex flex-col items-center text-center">
+                             <Lock className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-3" />
+                             <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">Premium Feature</p>
+                             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mb-4">
+                                Upgrade to Premium or Max to create custom AI policies and refined moderation instructions.
+                             </p>
+                             <button 
+                                onClick={() => setActiveTab('plan')}
+                                className="text-xs font-bold text-brand-600 dark:text-brand-400 underline underline-offset-4"
+                             >
+                                View Plans
+                             </button>
+                          </div>
+                       ) : (
+                          <div className="space-y-3">
+                             {Object.keys(settings.customPolicyDescriptions).length === 0 ? (
+                                <div className="text-center py-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                                   <AlertCircle className="w-6 h-6 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                                   <p className="text-xs text-slate-500 dark:text-slate-500">No custom policies defined yet.</p>
+                                </div>
+                             ) : (
+                                Object.entries(settings.customPolicyDescriptions).map(([name, desc]) => {
+                                   const isSelected = settings.selectedCustomPolicies.includes(name);
+                                   return (
+                                      <div 
+                                         key={name}
+                                         className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-200 ${
+                                            isSelected 
+                                            ? 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800/50' 
+                                            : 'bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800'
+                                         }`}
+                                      >
+                                         <button 
+                                            onClick={() => toggleCustomPolicy(name)}
+                                            className={`w-5 h-5 rounded flex-shrink-0 border transition-all ${
+                                                isSelected 
+                                                ? 'bg-purple-600 border-purple-600' 
+                                                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                                            }`}
+                                         >
+                                            {isSelected && <Check className="w-3.5 h-3.5 text-white mx-auto" strokeWidth={4} />}
+                                         </button>
+                                         
+                                         <div className="flex-1 min-w-0" onClick={() => toggleCustomPolicy(name)} style={{cursor: 'pointer'}}>
+                                            <h4 className={`text-sm font-bold truncate ${isSelected ? 'text-purple-950 dark:text-purple-100' : 'text-slate-900 dark:text-white'}`}>
+                                               {name}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                                               {desc}
+                                            </p>
+                                         </div>
+
+                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button 
+                                               onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setEditingPolicyName(name);
+                                                  setNewPolicyName(name);
+                                                  
+                                                  // Parse structured description
+                                                  const match = (desc as string).match(/^Treat comments with (.*) as (.*)$/);
+                                                  if (match) {
+                                                     setNewPolicyCondition(match[1]);
+                                                     setNewPolicyAction(match[2]);
+                                                  } else {
+                                                     setNewPolicyCondition(desc);
+                                                     setNewPolicyAction('spam');
+                                                  }
+                                                  
+                                                  setIsCustomPolicyFormOpen(true);
+                                               }}
+                                               className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors"
+                                               title="Edit Policy"
+                                            >
+                                               <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button 
+                                               onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDeleteCustomPolicy(name);
+                                               }}
+                                               className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                                               title="Delete Policy"
+                                            >
+                                               <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                         </div>
+                                      </div>
+                                   );
+                                })
+                             )}
+                          </div>
+                       )}
+
+                       {/* Custom Policy Form Modal */}
+                       {isCustomPolicyFormOpen && (
+                          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+                             <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+                                <div className="p-6">
+                                   <div className="flex items-center justify-between mb-4">
+                                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                         {editingPolicyName ? 'Edit Policy' : 'Create Custom Policy'}
+                                      </h3>
+                                      <button 
+                                         onClick={() => setIsCustomPolicyFormOpen(false)}
+                                         className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                      >
+                                         <AlertCircle className="w-5 h-5 rotate-45" />
+                                      </button>
+                                   </div>
+
+                                   <div className="space-y-6">
+                                      <div>
+                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Policy Name</label>
+                                         <input 
+                                            type="text"
+                                            value={newPolicyName}
+                                            onChange={(e) => setNewPolicyName(e.target.value)}
+                                            disabled={!!editingPolicyName}
+                                            placeholder="e.g. Scams, Competitors, Toxicity"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all outline-none disabled:opacity-50"
+                                         />
+                                      </div>
+                                      
+                                      <div className="bg-slate-50 dark:bg-slate-950/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                                         <div className="flex flex-col gap-3">
+                                            <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                               <span>Treat comments with</span>
+                                            </div>
+                                            
+                                            <textarea 
+                                               value={newPolicyCondition}
+                                               onChange={(e) => setNewPolicyCondition(e.target.value)}
+                                               placeholder="e.g. mentions of XYZ or crypto scams"
+                                               className="w-full h-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all outline-none resize-none text-sm"
+                                            />
+
+                                            <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                               <span>as</span>
+                                               <select 
+                                                  value={newPolicyAction}
+                                                  onChange={(e) => setNewPolicyAction(e.target.value)}
+                                                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none text-sm font-bold min-w-[120px]"
+                                               >
+                                                  <option value="spam">Spam</option>
+                                                  <option value="hateSpeech">Hate Speech</option>
+                                                  <option value="harassment">Harassment</option>
+                                                  <option value="violence">Violence</option>
+                                                  <option value="sexualContent">Sexual Content</option>
+                                                  <option value="selfHarm">Self Harm</option>
+                                               </select>
+                                            </div>
+                                         </div>
+                                      </div>
+                                   </div>
+
+                                   <div className="mt-8 flex gap-3">
+                                      <button 
+                                         onClick={() => setIsCustomPolicyFormOpen(false)}
+                                         className="flex-1 px-4 py-3 rounded-xl font-bold text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                      >
+                                         Cancel
+                                      </button>
+                                      <button 
+                                         onClick={handleSaveCustomPolicy}
+                                         disabled={!newPolicyName || !newPolicyCondition || isSaving}
+                                         className="flex-1 px-4 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
+                                      >
+                                         {isSaving ? 'Saving...' : 'Save Policy'}
+                                      </button>
+                                   </div>
+                                </div>
+                             </div>
+                          </div>
+                       )}
+                    </div>
+
+                    {/* Global Confidence Threshold Card */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mt-6">
+                       <div className="flex items-center justify-between mb-4">
+                          <div>
+                             <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                               <Target className="w-5 h-5 text-brand-500" /> Global Confidence Threshold
+                             </h3>
+                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                               Minimum AI certainty required to hide a comment. Applies to standard and custom policies.
+                             </p>
+                          </div>
+                          <div className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 rounded-lg text-sm font-bold border border-brand-100 dark:border-brand-800 uppercase tracking-tight shadow-sm">
+                             {settings.confidenceThreshold}%
+                          </div>
+                       </div>
+                       
+                       <div className="px-1 mt-6">
+                          <input 
+                             type="range" 
+                             min="50" 
+                             max="99" 
+                             step="1"
+                             value={settings.confidenceThreshold}
+                             onChange={(e) => setSettings({...settings, confidenceThreshold: parseInt(e.target.value)})}
+                             className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-600 focus:outline-none transition-all"
+                          />
+                          <div className="flex justify-between mt-3 text-xs font-bold text-slate-400 uppercase tracking-tight">
+                             <span>Aggressive (Low Certainty)</span>
+                             <span>Balanced</span>
+                             <span>Strict (High Certainty)</span>
+                          </div>
+                       </div>
+                    </div>
 
                    <div className="mt-8 flex justify-end">
                       <button 

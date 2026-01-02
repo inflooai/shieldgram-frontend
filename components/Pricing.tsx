@@ -17,7 +17,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl mb-4">Simple, transparent pricing</h2>
           <p className="text-lg text-slate-600 dark:text-slate-400">
-            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">7-day free trial</span> (100 scans/day). No credit card required.
+            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">1-month free trial</span>. No credit card required.
           </p>
         </div>
 
@@ -32,7 +32,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             </div>
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>10k</strong> comments / mo
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>5k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>1</strong> social account
@@ -50,19 +50,16 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
           </div>
 
           {/* Plus Plan */}
-          <div className="rounded-2xl border-2 border-brand-600 dark:border-brand-500 p-6 shadow-xl relative bg-white dark:bg-slate-900 flex flex-col">
-             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-600 dark:bg-brand-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-               Most Popular
-             </div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex flex-col bg-white dark:bg-slate-900">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Plus</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For growing influencers</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$10</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">$15</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>25k</strong> comments / mo
+                <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>20k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>2</strong> social accounts
@@ -73,23 +70,26 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             </ul>
             <button 
               onClick={handlePlanClick}
-              className="mt-8 w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white font-semibold rounded-lg transition-colors shadow-md"
+              className="mt-8 w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-semibold rounded-lg transition-colors"
             >
-              Start Free Trial
+              Get Plus
             </button>
           </div>
 
           {/* Premium Plan */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex flex-col bg-white dark:bg-slate-900">
+          <div className="rounded-2xl border-2 border-brand-600 dark:border-brand-500 p-6 shadow-xl relative bg-white dark:bg-slate-900 flex flex-col">
+             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-600 dark:bg-brand-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
+               Most Popular
+             </div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Premium</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For agencies & brands</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$35</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">$30</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>100k</strong> comments / mo
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>50k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
@@ -103,9 +103,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             </ul>
             <button 
               onClick={handlePlanClick}
-              className="mt-8 w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-semibold rounded-lg transition-colors"
+              className="mt-8 w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white font-semibold rounded-lg transition-colors shadow-md"
             >
-              Get Premium
+              Start Free Trial
             </button>
           </div>
 
@@ -114,12 +114,12 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Max</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For large scale needs</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$100</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">$75</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>250k</strong> comments / mo
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> <strong>200k</strong> comments / mo
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>Unlimited</strong> accounts

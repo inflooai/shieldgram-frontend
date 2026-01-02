@@ -10,7 +10,9 @@ export interface AccountInfo {
   plan_type: string;
   policies: string;
   custom_policy: string;
+  confidence_threshold: number;
   profile_picture_url: string;
+  custom_policy_definitions?: { policy_name: string, description: string }[];
 }
 
 
@@ -53,7 +55,8 @@ export const saveDashboardControls = async (
   owner_user_id: string,
   policies: string,
   plan_type: string,
-  custom_policy: string
+  custom_policy: string,
+  confidence_threshold: number
 ): Promise<void> => {
   try {
     const response = await fetch(`${DASHBOARD_API_URL}/save-controls`, {
@@ -67,7 +70,8 @@ export const saveDashboardControls = async (
         owner_user_id,
         policies,
         plan_type,
-        custom_policy
+        custom_policy,
+        confidence_threshold
       }),
     });
 
@@ -128,7 +132,68 @@ export const getInterventions = async (idToken: string, account_id: string, limi
     const data = await response.json();
     return data.interventions || [];
   } catch (error) {
-    console.error("Error fetching interventions:", error);
+    throw error;
+  }
+};
+
+export const saveCustomPolicy = async (
+  idToken: string,
+  account_id: string,
+  policy_name: string,
+  description: string
+): Promise<void> => {
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/save-custom-policy`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        account_id,
+        policy_name,
+        description
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("Error saving custom policy:", error);
+    throw error;
+  }
+};
+
+export const deleteCustomPolicy = async (
+  idToken: string,
+  account_id: string,
+  policy_name: string
+): Promise<void> => {
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/delete-custom-policy`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        account_id,
+        policy_name
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("Error deleting custom policy:", error);
     throw error;
   }
 };

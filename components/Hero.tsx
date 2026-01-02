@@ -36,7 +36,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight text-slate-900 dark:text-white mb-8">
-              Protect your community from <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400">toxic comments</span>
+              Protect your community and brand<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400"> with AI</span>
             </h1>
 
             <p className="font-outfit text-lg sm:text-xl text-slate-600 dark:text-slate-400 mb-10 leading-relaxed font-normal">
