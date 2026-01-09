@@ -287,9 +287,9 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
           {authMode === 'signup' && (
             <p className="mt-4 text-[10px] text-center text-slate-500 leading-relaxed uppercase tracking-wider">
               By creating an account, you agree to our{' '}
-              <a href="/terms" target="_blank" className="text-brand-600 hover:text-brand-500 font-bold underline">Terms of Service</a>
+              <a href="#/terms" target="_blank" className="text-brand-600 hover:text-brand-500 font-bold underline">Terms of Service</a>
               {' '}and{' '}
-              <a href="/privacy" target="_blank" className="text-brand-600 hover:text-brand-500 font-bold underline">Privacy Policy</a>
+              <a href="#/privacy" target="_blank" className="text-brand-600 hover:text-brand-500 font-bold underline">Privacy Policy</a>
             </p>
           )}
         </form>

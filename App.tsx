@@ -36,6 +36,14 @@ const App: React.FC = () => {
     setIsLoading(false);
   }, []);
 
+  // Sync state with hash changes for routing
+  const [, setHash] = useState(typeof window !== 'undefined' ? window.location.hash : '');
+  useEffect(() => {
+    const handleHashChange = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -102,29 +110,29 @@ const App: React.FC = () => {
   }
 
   // ==========================================
-  // LEGAL ROUTES (Simple Path Handling)
+  // LEGAL ROUTES (Simple Hash Handling)
   // ==========================================
-  const currentPath = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '';
+  const currentHash = typeof window !== 'undefined' ? window.location.hash.toLowerCase() : '';
   
-  if (currentPath === '/privacy' || currentPath === '/privacy-policy') {
+  if (currentHash === '#/privacy' || currentHash === '#/privacy-policy') {
     return (
       <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} bg-white dark:bg-slate-950`}>
         <LegalModal 
           title="Privacy Policy" 
           contentPath="/privacy.txt" 
-          onClose={() => window.location.href = isDashboardSubdomain ? getDashboardUrl() : '/'} 
+          onClose={() => window.location.hash = ''} 
         />
       </div>
     );
   }
 
-  if (currentPath === '/terms' || currentPath === '/terms-of-service' || currentPath === '/tos') {
+  if (currentHash === '#/terms' || currentHash === '#/terms-of-service' || currentHash === '#/tos') {
     return (
       <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} bg-white dark:bg-slate-950`}>
         <LegalModal 
           title="Terms of Service" 
           contentPath="/tos.txt" 
-          onClose={() => window.location.href = isDashboardSubdomain ? getDashboardUrl() : '/'} 
+          onClose={() => window.location.hash = ''} 
         />
       </div>
     );
