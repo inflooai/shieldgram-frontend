@@ -1,0 +1,140 @@
+SHIELDGRAM PRIVACY POLICY
+Effective Date: January 9, 2026
+Last Updated: January 9, 2026
+
+This Privacy Policy explains how ShieldGram (“ShieldGram”, “we”, “us”, “our”) operated by LightRunner Labs collects, uses, discloses, and protects information when you visit https://shieldgram.com (the “Site”) or use the ShieldGram service (the “Service”).
+
+If you have questions or requests about privacy, contact: support@shieldgram.com
+
+
+1) WHO WE ARE
+Service Name: ShieldGram
+Operator: LightRunner Labs
+Country of operation: India
+Website: https://shieldgram.com
+Support email: support@shieldgram.com
+
+
+2) WHAT SHIELDGRAM DOES
+ShieldGram helps creators and brands moderate Instagram comment sections with automated analysis. To provide the Service, ShieldGram connects to your Instagram account via the Instagram Graph API (by Meta) and processes comments posted under your posts.
+
+
+3) IMPORTANT NOTE ABOUT ROLES (CONTROLLER VS PROCESSOR)
+Depending on the context, ShieldGram may act as:
+
+A) Controller (for your account data)
+For information about you as a ShieldGram user/customer (e.g., your login, subscription status, support communications), ShieldGram typically determines the purposes and means of processing, and acts as a data controller.
+
+B) Processor / Service Provider (for Instagram comment data)
+For Instagram comment content and commenter information retrieved from your connected Instagram account(s), you (the customer) typically determine the purposes of processing (e.g., moderating your comment section). In this context, ShieldGram processes that data on your behalf to provide the Service.
+
+You are responsible for ensuring you have appropriate rights, notices, and legal bases to process commenter data under applicable laws and platform terms.
+
+
+4) INFORMATION WE COLLECT
+
+4.1 Information you provide
+- Account information: name, email address, password (stored as a hash), and authentication/session information.
+- Customer settings and preferences: for example, storage opt-out preferences (if enabled).
+- Communications: information you send to us (e.g., support requests, feedback).
+
+4.2 Information we receive from Instagram (via your authorization)
+When you connect your Instagram account, we may access and process:
+- Comment content (text), comment identifiers, timestamps
+- Post/media identifiers needed to retrieve and associate comments
+- Commenter identifiers and metadata available via the Instagram Graph API (for example, username/handle)
+
+We also process and store Instagram access tokens necessary to access the Instagram Graph API. Access tokens are encrypted before being stored.
+
+4.3 Information collected automatically
+- Cookies and similar technologies: used primarily for authentication and maintaining secure sessions.
+- Analytics: we use Google Analytics on the Site to understand website usage. Google Analytics may use cookies or similar identifiers depending on your browser and settings.
+
+
+5) HOW WE USE INFORMATION
+We use information to:
+- Provide, operate, and maintain the Service (including retrieving and analyzing Instagram comments and generating moderation outputs)
+- Authenticate users and secure accounts
+- Manage trials, subscriptions, and billing status (payments are handled by Razorpay; we do not store full payment card details)
+- Provide customer support and respond to inquiries
+- Monitor, debug, and improve reliability and security
+- Comply with legal obligations and enforce our agreements
+
+
+6) COOKIES & ANALYTICS
+6.1 Essential cookies
+We use essential cookies to:
+- keep you logged in
+- maintain secure sessions
+- protect against fraud and abuse
+
+6.2 Analytics cookies (Google Analytics)
+We use Google Analytics to understand how the Site is used and improve it. You can limit or disable cookies through your browser settings. Where required by law, we may ask for consent before using certain analytics cookies.
+
+
+7) HOW WE SHARE INFORMATION
+We do not sell your personal information.
+
+We may share information with:
+- Infrastructure and hosting providers: Amazon Web Services (AWS)
+- Payment processor: Razorpay (to process payments)
+- Analytics provider: Google Analytics (for Site analytics)
+- Meta/Instagram: as necessary to connect to the Instagram Graph API and operate the Service
+
+We may also disclose information:
+- to comply with law, regulation, legal process, or enforceable governmental requests
+- to protect the rights, safety, and security of ShieldGram, our users, and the public
+- in connection with a merger, acquisition, financing, reorganization, or sale of assets (with appropriate safeguards)
+
+
+8) INTERNATIONAL DATA TRANSFERS
+ShieldGram is operated from India. Our primary infrastructure is hosted on AWS in the United States region us-east-1. This means information may be processed and stored outside your country of residence.
+
+By using the Service, you understand that your information may be transferred to and processed in countries with different data protection laws than your country. We take reasonable steps to protect information in transit and at rest.
+
+
+9) DATA RETENTION
+We retain information as follows (unless a longer period is required by law or necessary for legitimate business purposes):
+- Account data: retained as long as your account is active, and for a reasonable period afterward as needed for compliance, security, and dispute resolution.
+- Service logs: retained for 7 days.
+- Instagram customer content (comment content and related metadata): retained for 1 month.
+- Storage opt-out: if you opt out of storing comment content (where available), we will limit storage of comment content except as necessary to provide the Service and for security/compliance.
+
+Backups may persist for a limited period even after deletion due to technical constraints.
+
+
+10) SECURITY
+We use reasonable administrative, technical, and physical safeguards designed to protect information. Examples include:
+- encryption in transit (e.g., TLS)
+- encryption at rest where appropriate (AWS-managed encryption)
+- encrypted storage of Instagram access tokens (encrypted before storing in the database)
+- access controls and least-privilege practices
+
+No method of transmission or storage is 100% secure; therefore, we cannot guarantee absolute security.
+
+
+11) YOUR RIGHTS AND CHOICES
+11.1 Account access, deletion, and data requests
+You may:
+- delete your account through the Service (if available), and/or
+- request deletion of your account and associated data by emailing support@shieldgram.com
+
+To help us verify and fulfill your request, include:
+- your account email
+- the Instagram account(s) connected (if relevant)
+- the scope of your request (account deletion, comment data deletion, etc.)
+
+11.2 Regional rights
+Depending on your location, you may have rights such as access, correction, deletion/erasure, and withdrawal of consent (where consent is the legal basis). We will respond to valid requests as required by applicable law.
+
+
+12) CHILDREN
+ShieldGram is not directed to children and is not intended for use by anyone under 18 years of age. If you believe a minor has provided us information, contact support@shieldgram.com and we will take reasonable steps to delete it.
+
+
+13) CHANGES TO THIS POLICY
+We may update this Privacy Policy from time to time. We will update the “Last Updated” date and may provide additional notice (e.g., by email or in-product notice) when required.
+
+
+14) CONTACT
+Email: support@shieldgram.com

@@ -16,7 +16,9 @@ import {
   getInterventions, 
   AccountInfo,
   saveCustomPolicy as saveCustomPolicyApi,
-  deleteCustomPolicy as deleteCustomPolicyApi
+  deleteCustomPolicy as deleteCustomPolicyApi,
+  processIntervention,
+  removeInstagramAccount
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -32,7 +34,7 @@ type PlanType = 'standard' | 'plus' | 'premium' | 'max';
 interface DashboardStats {
   scanned: number;
   moderated: number;
-  protectionScore: number;
+  averageResponseTime: number;
 }
 
 interface UserSettings {
@@ -65,8 +67,8 @@ const MOCK_ACCOUNTS: Account[] = [];
 const PLANS = {
   standard: { price: 5, label: 'Standard', features: ['5k comments/mo', '1 social account', 'Standard Protection'] },
   plus: { price: 15, label: 'Plus', features: ['20k comments/mo', '2 social accounts', 'Standard Protection'] },
-  premium: { price: 30, label: 'Premium', features: ['50k comments/mo', '5 social accounts', 'Multi-modal AI', 'Custom Policies'] },
-  max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Multi-modal AI', 'Custom Policies'] }
+  premium: { price: 30, label: 'Premium', features: ['50k comments/mo', '5 social accounts', 'Multi-model AI', 'Custom Policies'] },
+  max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Multi-model AI', 'Custom Policies'] }
 };
 
 // Helper to load Razorpay SDK
@@ -113,7 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
 
   // Data States
-  const [stats, setStats] = useState<DashboardStats>({ scanned: 0, moderated: 0, protectionScore: 0 });
+  const [stats, setStats] = useState<DashboardStats>({ scanned: 0, moderated: 0, averageResponseTime: 0 });
   const [activity, setActivity] = useState<ModeratedCommentLog[]>([]);
   const [interventionsLimit, setInterventionsLimit] = useState(10);
   const [settings, setSettings] = useState<UserSettings>({
@@ -131,6 +133,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [newPolicyName, setNewPolicyName] = useState('');
   const [newPolicyCondition, setNewPolicyCondition] = useState('');
   const [newPolicyAction, setNewPolicyAction] = useState('spam');
+
+  // Account Removal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // URL Sync
   useEffect(() => {
@@ -192,7 +198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         const mappedAccounts = accountData.map(acc => ({
             id: acc.account_id,
             name: acc.account_name,
-            handle: `@${acc.account_name.toLowerCase().replace(/\s+/g, '_')}`, // Mock handle
+            handle: acc.account_name.toLowerCase().replace(/\s+/g, '_'), // Remove mock '@' prefix
             profilePictureUrl: acc.profile_picture_url
         }));
         setAccounts(mappedAccounts);
@@ -207,7 +213,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         setCurrentAccount({
             id: selected.account_id,
             name: selected.account_name,
-            handle: `@${selected.account_name.toLowerCase().replace(/\s+/g, '_')}`,
+            handle: selected.account_name.toLowerCase().replace(/\s+/g, '_'),
             profilePictureUrl: selected.profile_picture_url
         });
         setRawAccountInfo(selected);
@@ -242,18 +248,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         }));
 
         await fetchInterventions(selected.account_id, interventionsLimit);
+
+        setStats({
+          scanned: selected?.stats?.comments_scanned ?? 0,
+          moderated: selected?.stats?.comments_moderated ?? 0,
+          averageResponseTime: selected?.stats?.comments_moderated > 0 
+            ? (selected?.stats?.processing_time ?? 0) / selected.stats.comments_moderated 
+            : 0
+        });
       } else {
           // No accounts found
           setAccounts([]);
           setCurrentAccount(null);
+          
+          setStats({
+            scanned: 0,
+            moderated: 0,
+            averageResponseTime: 0
+          });
       }
-
-      // Sample Stats Data (still mocked to preserve frontend state as requested)
-      setStats({
-        scanned: 452890,
-        moderated: 12405,
-        protectionScore: 98
-      });
     } catch (error: any) {
         console.error("Failed to load dashboard data", error);
         if (error.status === 401 || error.status === 403) {
@@ -279,7 +292,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             text: item.text,
             riskLevel: (item.riskLevel || 'SAFE') as CommentRiskLevel,
             timestamp: formatTimestamp(item.moderated_at),
-            actionTaken: item.suggested_action || 'NONE'
+            actionTaken: item.suggested_action || 'NONE',
+            commenter_id: item.commenter_id
         }));
         setActivity(mappedActivity);
     } catch (err) {
@@ -471,9 +485,61 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   };
 
 
-  const handleAction = (id: string, action: string) => {
-    // Optimistic update
-    setActivity(prev => prev.filter(c => c.id !== id));
+  const handleAction = async (id: string, action: 'SAFE' | 'DELETE' | 'RESTRICT') => {
+    if (!currentAccount) return;
+    
+    // Find the comment in activity
+    const comment = activity.find(c => c.id === id);
+    if (!comment) return;
+
+    try {
+        const token = getAuthToken();
+        if (!token) return;
+
+        // Optimistic update
+        setActivity(prev => prev.filter(c => c.id !== id));
+        
+        // Match frontend action to API action_type
+        const actionType = action === 'RESTRICT' ? 'USER' : 'COMMENT';
+        
+        await processIntervention(
+            token, 
+            currentAccount.id, 
+            id, 
+            comment.commenter_id || null, 
+            action, 
+            actionType
+        );
+        
+        showToast(`Action ${action} requested successfully.`);
+    } catch (error) {
+        console.error("Failed to process intervention", error);
+        showToast("Failed to process intervention", "error");
+        // Re-fetch to restore state
+        fetchInterventions(currentAccount.id, interventionsLimit);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!accountToDelete) return;
+    
+    setIsSaving(true);
+    try {
+        const token = getAuthToken();
+        if (!token) return;
+
+        await removeInstagramAccount(token, accountToDelete.id);
+        showToast("Account removed successfully");
+        setIsDeleteModalOpen(false);
+        setAccountToDelete(null);
+        
+        // Refresh dashboard
+        loadData(true);
+    } catch (error: any) {
+        showToast(error.message || "Failed to remove account", "error");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   const handleSwitchAccount = (account: Account) => {
@@ -728,7 +794,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                 </div>
                 <p className="text-slate-500 font-medium animate-pulse">Syncing your protection...</p>
              </div>
-          ) : accounts.length === 0 ? (
+          ) : (accounts.length === 0 && activeTab !== 'plan') ? (
             <div className="max-w-4xl mx-auto text-center py-20 px-6 animate-fade-in">
                  <div className="w-24 h-24 bg-brand-50 dark:bg-brand-900/20 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3 shadow-inner text-brand-600">
                     <ShieldCheck className="w-12 h-12" />
@@ -803,7 +869,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Comments Scanned</p>
                           <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.scanned.toLocaleString()}</h3>
                           <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
-                            <span className="font-bold">↑ 12%</span> this month
+                            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Scanned</span>
                           </p>
                         </div>
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -818,7 +884,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Threats Blocked</p>
                           <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.moderated.toLocaleString()}</h3>
                           <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
-                            <span className="font-bold">↑ 5%</span> this month
+                            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Moderated</span>
                           </p>
                         </div>
                         <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
@@ -830,14 +896,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 transition-colors">
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Protection Score</p>
-                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.protectionScore}/100</h3>
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                            Based on response time
+                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Avg. Response Time</p>
+                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">
+                             {stats.averageResponseTime === 0 ? '-' : 
+                              stats.averageResponseTime < 1 ? '< 1s' : 
+                              `${stats.averageResponseTime.toFixed(1)}s`}
+                          </h3>
+                          <p className="text-xs text-brand-600 dark:text-brand-400 mt-2 flex items-center gap-1">
+                            <Zap className="w-3 h-3" /> <span className="font-bold">Fast Protection</span>
                           </p>
                         </div>
-                        <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <ShieldCheck className="w-6 h-6 text-green-600 dark:text-green-400" />
+                        <div className="p-3 bg-brand-50 dark:bg-brand-900/20 rounded-lg">
+                          <Zap className="w-6 h-6 text-brand-600 dark:text-brand-400" />
                         </div>
                       </div>
                     </div>
@@ -884,7 +954,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
                               <div className="flex items-center gap-2 self-end sm:self-center">
                                 <button 
-                                    onClick={() => handleAction(comment.id, 'APPROVE')}
+                                    onClick={() => handleAction(comment.id, 'SAFE')}
                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
                                     title="Mark as Safe (False Positive)"
                                 >
@@ -903,9 +973,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                     <Trash2 className="w-5 h-5" />
                                 </button>
                                 <button 
-                                    onClick={() => handleAction(comment.id, 'BAN')}
+                                    onClick={() => handleAction(comment.id, 'RESTRICT')}
                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                    title="Restrict/Ban User"
+                                    title="Restrict User"
                                 >
                                     <Ban className="w-5 h-5" />
                                 </button>
@@ -1264,6 +1334,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                           </div>
                        </div>
                     </div>
+                    
 
                    <div className="mt-8 flex justify-end">
                       <button 
@@ -1275,6 +1346,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                          Save Changes
                       </button>
                    </div>
+
+                   <div className="my-10 border-t border-slate-200 dark:border-slate-800"></div>
+
+                    {/* Danger Zone */}
+                    <div className="bg-red-50/30 dark:bg-red-900/5 rounded-xl border border-red-100 dark:border-red-900/30 p-6">
+                       <h3 className="font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-2">
+                          <Trash2 className="w-5 h-5" /> Danger Zone
+                       </h3>
+                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                          <div>
+                             <p className="text-sm font-semibold text-slate-900 dark:text-white">Remove Instagram Account</p>
+                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Permanently disconnect <span className="font-bold">{currentAccount?.handle}</span> and delete all associated data.
+                             </p>
+                          </div>
+                          <button 
+                             onClick={() => {
+                                setAccountToDelete(currentAccount);
+                                setIsDeleteModalOpen(true);
+                             }}
+                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-red-500/10"
+                          >
+                             Remove Account
+                          </button>
+                       </div>
+                    </div>
                 </div>
               )}
 
@@ -1452,6 +1549,44 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
           )}
         </div>
       </main>
+
+      {/* Account Deletion Confirmation Modal */}
+      {isDeleteModalOpen && accountToDelete && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Remove Account?</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                Are you sure you want to remove <span className="font-bold text-slate-900 dark:text-white">{accountToDelete.handle}</span>? 
+                All associated moderation history and statistics will be permanently deleted.
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleDeleteAccount}
+                  disabled={isSaving}
+                  className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-500/20 transition-all disabled:opacity-50"
+                >
+                  {isSaving ? 'Removing...' : 'Yes, Remove Account'}
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setAccountToDelete(null);
+                  }}
+                  disabled={isSaving}
+                  className="w-full py-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

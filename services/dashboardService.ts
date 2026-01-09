@@ -13,6 +13,11 @@ export interface AccountInfo {
   confidence_threshold: number;
   profile_picture_url: string;
   custom_policy_definitions?: { policy_name: string, description: string }[];
+  stats?: {
+    comments_scanned: number;
+    comments_moderated: number;
+    processing_time?: number;
+  };
 }
 
 
@@ -194,6 +199,64 @@ export const deleteCustomPolicy = async (
     }
   } catch (error) {
     console.error("Error deleting custom policy:", error);
+    throw error;
+  }
+};
+
+export const removeInstagramAccount = async (idToken: string, account_id: string): Promise<void> => {
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/dashboard-info?account_id=${account_id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("Error removing Instagram account:", error);
+    throw error;
+  }
+};
+
+export const processIntervention = async (
+  idToken: string,
+  account_id: string,
+  comment_id: string | null,
+  commenter_id: string | null,
+  action: 'HIDE' | 'DELETE' | 'RESTRICT' | 'SAFE',
+  action_type: 'COMMENT' | 'USER' = 'COMMENT'
+): Promise<void> => {
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/intervene`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        account_id,
+        comment_id,
+        commenter_id,
+        action,
+        action_type
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("Error processing intervention:", error);
     throw error;
   }
 };
