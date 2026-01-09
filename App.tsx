@@ -7,6 +7,7 @@ import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
+import LegalModal from './components/LegalModal';
 import { getAuthToken, removeAuthToken } from './utils/auth';
 
 const App: React.FC = () => {
@@ -98,6 +99,35 @@ const App: React.FC = () => {
 
   if (isLoading || isRedirecting) {
     return <div className="min-h-screen bg-slate-50 dark:bg-slate-950"></div>; // Prevent flash
+  }
+
+  // ==========================================
+  // LEGAL ROUTES (Simple Path Handling)
+  // ==========================================
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '';
+  
+  if (currentPath === '/privacy' || currentPath === '/privacy-policy') {
+    return (
+      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} bg-white dark:bg-slate-950`}>
+        <LegalModal 
+          title="Privacy Policy" 
+          contentPath="/privacy.txt" 
+          onClose={() => window.location.href = isDashboardSubdomain ? getDashboardUrl() : '/'} 
+        />
+      </div>
+    );
+  }
+
+  if (currentPath === '/terms' || currentPath === '/terms-of-service' || currentPath === '/tos') {
+    return (
+      <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} bg-white dark:bg-slate-950`}>
+        <LegalModal 
+          title="Terms of Service" 
+          contentPath="/tos.txt" 
+          onClose={() => window.location.href = isDashboardSubdomain ? getDashboardUrl() : '/'} 
+        />
+      </div>
+    );
   }
 
   // ==========================================

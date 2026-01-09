@@ -3,18 +3,6 @@ import { Shield, Twitter, Instagram, Linkedin } from 'lucide-react';
 import LegalModal from './LegalModal';
 
 const Footer: React.FC = () => {
-  const [activeLegalDoc, setActiveLegalDoc] = useState<{title: string, path: string} | null>(null);
-
-  const openTerms = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setActiveLegalDoc({ title: 'Terms of Service', path: '/tos.txt' });
-  };
-
-  const openPrivacy = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setActiveLegalDoc({ title: 'Privacy Policy', path: '/privacy.txt' });
-  };
-
   return (
     <footer className="bg-slate-900 text-slate-300 py-12 border-t border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -46,8 +34,8 @@ const Footer: React.FC = () => {
           <div>
             <h4 className="text-white font-semibold mb-4">Legal</h4>
             <ul className="space-y-2 text-sm">
-              <li><button onClick={openPrivacy} className="hover:text-brand-400 transition-colors text-left w-full">Privacy Policy</button></li>
-              <li><button onClick={openTerms} className="hover:text-brand-400 transition-colors text-left w-full">Terms of Service</button></li>
+              <li><a href="/privacy" className="hover:text-brand-400 transition-colors text-left w-full">Privacy Policy</a></li>
+              <li><a href="/terms" className="hover:text-brand-400 transition-colors text-left w-full">Terms of Service</a></li>
             </ul>
           </div>
         </div>
@@ -57,13 +45,6 @@ const Footer: React.FC = () => {
         </div>
       </div>
 
-      {activeLegalDoc && (
-        <LegalModal 
-          title={activeLegalDoc.title} 
-          contentPath={activeLegalDoc.path} 
-          onClose={() => setActiveLegalDoc(null)} 
-        />
-      )}
     </footer>
   );
 };
