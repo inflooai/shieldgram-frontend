@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Loader2, CheckCircle2, RefreshCw } from 'lucide-react';
 // @ts-ignore - Importing from esm.sh
 import { CognitoUserPool, CognitoUser, AuthenticationDetails } from 'amazon-cognito-identity-js';
-import { setAuthToken } from '../utils/auth';
+import { setAuthTokens } from '../utils/auth';
 import logo from '../logo.svg';
   
 interface AuthPageProps {
@@ -18,7 +18,7 @@ const COGNITO_CONFIG = {
   UserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID, 
   ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID
 };
-type AuthMode = 'signin' | 'signup' | 'verify';
+type AuthMode = 'signin' | 'signup' | 'verify' | 'totp';
 
 const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
@@ -28,6 +28,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [cognitoUserRef, setCognitoUserRef] = useState<any>(null);
 
   // Check if we are running in mock mode (if env vars are missing or placeholders)
   const isMockMode = !COGNITO_CONFIG.UserPoolId || COGNITO_CONFIG.UserPoolId.includes('xxx');
@@ -136,9 +137,13 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     if (isMockMode) {
          console.warn('AWS Cognito Config missing or using placeholders. Using mock login for demo.');
          setTimeout(() => {
-             setAuthToken('shieldgram-dummy-jwt-token');
-             setIsLoading(false);
-             onLoginSuccess();
+          setAuthTokens({ 
+              accessToken: 'shieldgram-dummy-access-token',
+              idToken: 'shieldgram-dummy-id-token',
+              refreshToken: 'shieldgram-dummy-refresh-token'
+          });
+          setIsLoading(false);
+          onLoginSuccess();
          }, 1000);
          return;
     }
@@ -156,14 +161,22 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     cognitoUser.authenticateUser(authenticationDetails, {
       onSuccess: (result: any) => {
         setIsLoading(false);
-        const accessToken = result.getAccessToken().getJwtToken();
-        setAuthToken(accessToken);
+        setAuthTokens({
+          accessToken: result.getAccessToken().getJwtToken(),
+          idToken: result.getIdToken().getJwtToken(),
+          refreshToken: result.getRefreshToken().getToken()
+        });
         onLoginSuccess();
       },
       onFailure: (err: any) => {
         setIsLoading(false);
         console.error(err);
         setError(err.message || 'Authentication failed');
+      },
+      totpRequired: (session: any) => {
+        setIsLoading(false);
+        setCognitoUserRef(cognitoUser); // Save user instance for verification
+        setAuthMode('totp');
       },
       newPasswordRequired: (userAttributes: any, requiredAttributes: any) => {
         setIsLoading(false);
@@ -172,19 +185,64 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
     });
   };
 
+  const handleTOTPSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    if (isMockMode) {
+        setTimeout(() => {
+            setAuthTokens({ 
+                accessToken: 'shieldgram-dummy-access-token',
+                idToken: 'shieldgram-dummy-id-token',
+                refreshToken: 'shieldgram-dummy-refresh-token'
+            });
+            setIsLoading(false);
+            onLoginSuccess();
+        }, 1000);
+        return;
+    }
+
+    if (!cognitoUserRef) {
+        setError("Authentication session lost. Please try signing in again.");
+        setAuthMode('signin');
+        setIsLoading(false);
+        return;
+    }
+
+    cognitoUserRef.sendMFACode(verificationCode, {
+        onSuccess: (result: any) => {
+            setIsLoading(false);
+            setAuthTokens({
+                accessToken: result.getAccessToken().getJwtToken(),
+                idToken: result.getIdToken().getJwtToken(),
+                refreshToken: result.getRefreshToken().getToken()
+            });
+            onLoginSuccess();
+        },
+        onFailure: (err: any) => {
+            setIsLoading(false);
+            console.error(err);
+            setError(err.message || 'Verification failed');
+        }
+    }, 'SOFTWARE_TOKEN_MFA');
+  };
+
   const getTitle = () => {
       switch(authMode) {
           case 'signin': return 'Welcome back';
           case 'signup': return 'Create an account';
           case 'verify': return 'Verify email';
+          case 'totp': return 'Security Check';
       }
   };
 
   const getSubtitle = () => {
       switch(authMode) {
           case 'signin': return 'Sign in to access your dashboard';
-          case 'signup': return 'Start your 7-day free trial';
+          case 'signup': return 'Start your 1-month free trial';
           case 'verify': return 'Enter the code sent to your email';
+          case 'totp': return 'Enter the 6-digit code from your authenticator app';
       }
   };
 
@@ -215,9 +273,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
             </div>
         )}
 
-        <form onSubmit={authMode === 'signin' ? handleLogin : authMode === 'signup' ? handleSignup : handleVerify} className="space-y-4">
+        <form onSubmit={
+            authMode === 'signin' ? handleLogin : 
+            authMode === 'signup' ? handleSignup : 
+            authMode === 'verify' ? handleVerify : 
+            handleTOTPSubmit
+        } className="space-y-4">
           
-          {authMode !== 'verify' && (
+          {authMode !== 'verify' && authMode !== 'totp' && (
              <>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
@@ -248,9 +311,11 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
              </>
           )}
 
-          {authMode === 'verify' && (
+          {(authMode === 'verify' || authMode === 'totp') && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Verification Code</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  {authMode === 'verify' ? 'Email Verification Code' : 'Authenticator App Code'}
+                </label>
                 <input 
                   type="text" 
                   required
@@ -259,7 +324,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
                   className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-brand-500 outline-none transition-all dark:text-white text-center text-xl tracking-widest"
                   placeholder="123456"
                 />
-                <div className="flex justify-end mt-2">
+                {authMode === 'verify' && (
+                  <div className="flex justify-end mt-2">
                     <button 
                         type="button" 
                         onClick={handleResendCode}
@@ -267,7 +333,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
                     >
                         <RefreshCw className="w-3 h-3" /> Resend Code
                     </button>
-                </div>
+                  </div>
+                )}
               </div>
           )}
 
@@ -279,7 +346,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 
                 authMode === 'signin' ? 'Sign In' : 
                 authMode === 'signup' ? 'Create Account' : 
-                'Verify Account'
+                authMode === 'verify' ? 'Verify Account' :
+                'Verify & Login'
             }
             {!isLoading && <ArrowRight className="w-4 h-4" />}
           </button>
@@ -304,8 +372,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
               onClick={() => {
                   setError(null);
                   setSuccessMessage(null);
-                  if (authMode === 'verify') {
-                      setAuthMode('signup');
+                  if (authMode === 'verify' || authMode === 'totp') {
+                      setAuthMode('signin');
                   } else {
                       setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
                   }

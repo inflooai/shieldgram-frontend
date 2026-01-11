@@ -8,14 +8,16 @@ export enum CommentRiskLevel {
   RACISM = 'RACISM',
   HARASSMENT = 'HARASSMENT',
   VIOLENCE = 'VIOLENCE',
-  SELF_HARM = 'SELF_HARM'
+  SELF_HARM = 'SELF_HARM',
+  PROFANITY = 'PROFANITY',
+  NEGATIVITY = 'NEGATIVITY'
 }
 
 export interface ModerationResult {
   riskLevel: CommentRiskLevel;
   confidenceScore: number;
   explanation: string;
-  suggestedAction: 'APPROVE' | 'HIDE' | 'DELETE' | 'REPORT';
+  suggestedAction: 'APPROVE' | 'HIDE';
 }
 
 export interface DemoComment {
@@ -26,7 +28,7 @@ export interface DemoComment {
   timestamp: string;
 }
 
-export type PolicyType = 'Spam' | 'Hate speech' | 'Sexual Content' | 'Harrassment' | 'Violence' | 'Self harm';
+export type PolicyType = 'Profanity' | 'Sexual Content' | 'Hate speech' | 'Self harm' | 'Violence' | 'Negativity' | 'Harassment' | 'Spam';
 
 export interface DashboardStat {
   label: string;

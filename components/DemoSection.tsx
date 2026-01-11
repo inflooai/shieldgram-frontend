@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { analyzeCommentWithLambda } from '../services/lambdaService';
 import { ModerationResult, CommentRiskLevel, PolicyType } from '../types';
-import { ShieldAlert, ShieldCheck, ShieldBan, Wand2, Loader2, Send, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, ShieldBan, Wand2, Loader2, Send, CheckSquare, Square, AlertTriangle, Target, HelpCircle } from 'lucide-react';
 
 const DemoSection: React.FC = () => {
   const [comment, setComment] = useState("");
@@ -10,14 +10,17 @@ const DemoSection: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [limitError, setLimitError] = useState<string | null>(null);
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(75); // Default: Aggressive
 
   const availablePolicies: PolicyType[] = [
-    'Spam', 
-    'Hate speech', 
+    'Profanity', 
     'Sexual Content', 
-    'Harrassment', 
+    'Hate speech', 
+    'Self harm', 
     'Violence', 
-    'Self harm'
+    'Negativity', 
+    'Harassment', 
+    'Spam'
   ];
 
   const togglePolicy = (policy: PolicyType) => {
@@ -29,6 +32,12 @@ const DemoSection: React.FC = () => {
   };
 
   const checkRateLimit = (): boolean => {
+    // Developer bypass: set localStorage item to skip rate limiting
+    const isDeveloperMode = localStorage.getItem('shieldgram_dev_mode') === 'true';
+    if (isDeveloperMode) {
+      return true; // Skip all rate limit checks
+    }
+
     const now = Date.now();
     const ONE_HOUR = 60 * 60 * 1000;
     
@@ -38,7 +47,7 @@ const DemoSection: React.FC = () => {
       const blockTime = parseInt(blockedUntil, 10);
       if (now < blockTime) {
         const minutesLeft = Math.ceil((blockTime - now) / 60000);
-        setLimitError(`Demo limit exceeded. Please try again in ${minutesLeft} minutes.`);
+        setLimitError(`Playground limit exceeded. Please try again in ${minutesLeft} minutes.`);
         return false;
       } else {
         // Block expired, clear it
@@ -60,7 +69,7 @@ const DemoSection: React.FC = () => {
       // Set block for 1 hour from the start time (or simply 1 hour from now for simplicity)
       const blockTime = now + ONE_HOUR;
       localStorage.setItem('shieldgram_blocked_until', blockTime.toString());
-      setLimitError("You have reached the limit of 10 demo requests per hour.");
+      setLimitError("You have reached the limit of 10 playground requests per hour.");
       return false;
     }
 
@@ -116,7 +125,19 @@ const DemoSection: React.FC = () => {
     try {
       const data = await analyzeCommentWithLambda(comment, policiesToUse);
       incrementUsage(); // Increment count on success
-      setResult(data);
+      
+      // Apply confidence threshold filter
+      if (data.riskLevel !== CommentRiskLevel.SAFE && data.confidenceScore < confidenceThreshold) {
+        // Below threshold - mark as safe
+        setResult({
+          riskLevel: CommentRiskLevel.SAFE,
+          confidenceScore: data.confidenceScore,
+          explanation: `Detected ${data.riskLevel} with ${data.confidenceScore}% confidence, but below ${confidenceThreshold}% threshold.`,
+          suggestedAction: 'APPROVE'
+        });
+      } else {
+        setResult(data);
+      }
     } catch (err) {
       setError("Failed to analyze comment. Please try again.");
     } finally {
@@ -136,6 +157,8 @@ const DemoSection: React.FC = () => {
       case CommentRiskLevel.HARASSMENT: return "text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-400";
       case CommentRiskLevel.VIOLENCE: return "text-rose-700 bg-rose-50 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-400";
       case CommentRiskLevel.SELF_HARM: return "text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-800 dark:text-teal-400";
+      case CommentRiskLevel.PROFANITY: return "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400";
+      case CommentRiskLevel.NEGATIVITY: return "text-slate-600 bg-slate-50 border-slate-200 dark:bg-slate-900/20 dark:border-slate-800 dark:text-slate-400";
       default: return "text-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-slate-400";
     }
   };
@@ -155,12 +178,12 @@ const DemoSection: React.FC = () => {
   ];
 
   return (
-    <section id="demo" className="py-24 bg-white dark:bg-slate-950 relative transition-colors duration-300">
+    <section id="playground" className="py-24 bg-white dark:bg-slate-950 relative transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl mb-4">See ShieldGram in Action</h2>
+          <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl mb-4">AI Playground</h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-            Test our AI moderation engine live. Select policies and type a comment to see how we classify it.
+            Experiment with our AI moderation engine live. Select policies and type a comment to see how it's classified.
           </p>
         </div>
 
@@ -187,6 +210,55 @@ const DemoSection: React.FC = () => {
                     >
                       {isActive ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                       {policy}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* AI Sensitivity Threshold */}
+            <div className="mb-6 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="w-4 h-4 text-brand-600 dark:text-brand-400" />
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">AI Sensitivity</label>
+                <div className="group relative">
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-brand-500 transition-colors cursor-help" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-xl shadow-xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all pointer-events-none z-50 leading-relaxed">
+                    • <span className="text-brand-300 font-bold">Aggressive:</span> Flags more comments (75%+ confidence)
+                    <br/>
+                    • <span className="text-brand-300 font-bold">Balanced:</span> Moderate filtering (90%+ confidence)
+                    <br/>
+                    • <span className="text-brand-300 font-bold">Strict:</span> Only obvious violations (99%+ confidence)
+                  </div>
+                </div>
+              </div>
+              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+                {[
+                  { label: 'Aggressive', value: 75 },
+                  { label: 'Balanced', value: 90 },
+                  { label: 'Strict', value: 99 }
+                ].map((option) => {
+                  const isActive = (
+                    option.value === 75 && confidenceThreshold < 90
+                  ) || (
+                    option.value === 90 && confidenceThreshold >= 90 && confidenceThreshold < 99
+                  ) || (
+                    option.value === 99 && confidenceThreshold >= 99
+                  );
+                  
+                  return (
+                    <button
+                      key={option.value}
+                      onClick={() => setConfidenceThreshold(option.value)}
+                      className={`
+                        flex-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all
+                        ${isActive 
+                          ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' 
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                        }
+                      `}
+                    >
+                      {option.label}
                     </button>
                   );
                 })}

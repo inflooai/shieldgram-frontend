@@ -8,17 +8,18 @@ import Footer from './components/Footer';
 import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
 import LegalModal from './components/LegalModal';
-import { getAuthToken, removeAuthToken } from './utils/auth';
+import { removeAuthToken, getThemeCookie, setThemeCookie } from './utils/auth';
+import { getValidToken } from './services/dashboardService';
 
 const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme');
+      const savedTheme = getThemeCookie() || localStorage.getItem('theme');
       if (savedTheme) {
         return savedTheme === 'dark';
       }
     }
-    return false; // Default to light mode
+    return false;
   });
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -31,9 +32,17 @@ const App: React.FC = () => {
 
   // Check for login status on mount
   useEffect(() => {
-    const token = getAuthToken();
-    setIsLoggedIn(!!token);
-    setIsLoading(false);
+    const checkAuth = async () => {
+      try {
+        await getValidToken();
+        setIsLoggedIn(true);
+      } catch (err) {
+        setIsLoggedIn(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    checkAuth();
   }, []);
 
   // Sync state with hash changes for routing
@@ -45,13 +54,14 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const theme = isDarkMode ? 'dark' : 'light';
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
     }
+    localStorage.setItem('theme', theme);
+    setThemeCookie(theme);
   }, [isDarkMode]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);

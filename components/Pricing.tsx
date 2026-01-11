@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Users, Shield } from 'lucide-react';
+import { Check, Users, Shield, Clock } from 'lucide-react';
 
 interface PricingProps {
   onNavigateDashboard: () => void;
@@ -76,12 +76,12 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             </button>
           </div>
 
-          {/* Premium Plan */}
+          {/* Pro Plan */}
           <div className="rounded-2xl border-2 border-brand-600 dark:border-brand-500 p-6 shadow-xl relative bg-white dark:bg-slate-900 flex flex-col">
              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-600 dark:bg-brand-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
                Most Popular
              </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Premium</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Pro</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For agencies & brands</p>
             <div className="mt-4 flex items-baseline gap-1">
               <span className="text-3xl font-bold text-slate-900 dark:text-white">$30</span>
@@ -95,7 +95,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>5</strong> social accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Multi-model AI inference
+                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Advanced Reasoning
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Custom Moderation Policies
@@ -125,7 +125,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>Unlimited</strong> accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Multi-model AI inference
+                <Shield className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> Advanced Reasoning
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
                 <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Custom Moderation Policies

@@ -37,7 +37,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center space-x-8">
             <button onClick={() => scrollToSection('features')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Features</button>
-            <button onClick={() => scrollToSection('demo')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Live Demo</button>
+            <button onClick={() => scrollToSection('playground')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Playground</button>
             <button onClick={() => scrollToSection('pricing')} className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors">Pricing</button>
             
             {/* Theme Toggle */}
@@ -107,7 +107,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
         <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 absolute w-full shadow-lg">
           <div className="px-4 pt-2 pb-6 space-y-2">
             <button onClick={() => scrollToSection('features')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Features</button>
-            <button onClick={() => scrollToSection('demo')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Live Demo</button>
+            <button onClick={() => scrollToSection('playground')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Playground</button>
             <button onClick={() => scrollToSection('pricing')} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md">Pricing</button>
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
               {isLoggedIn ? (

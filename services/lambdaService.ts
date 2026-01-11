@@ -13,8 +13,8 @@ export const analyzeCommentWithLambda = async (
       policies: policiesString,
       comments: [
         {
-          account_id: "demo_user",
-          comment_id: "demo_comment_" + Date.now(),
+          account_id: "playground_user",
+          comment_id: "playground_comment_" + Date.now(),
           text: commentText
         }
       ],

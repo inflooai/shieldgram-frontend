@@ -3,12 +3,12 @@ import {
   BarChart3, ShieldCheck, ShieldAlert, Trash2, CheckCircle, Ban, 
   Shield, LogOut, Sun, Moon, LayoutDashboard, Sliders, Lock, Save, 
   Check, RefreshCw, CreditCard, Download, Zap, ChevronDown, Plus,
-  AlertCircle, Target, Edit2
+  AlertCircle, Target, Edit2, Loader2, HelpCircle
 } from 'lucide-react';
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
 import logo from "../logo.svg";
 
-import { getAuthToken } from '../utils/auth';
+import { getAuthTokens, removeAuthToken } from '../utils/auth';
 import { 
   getDashboardInfo, 
   saveDashboardControls, 
@@ -18,7 +18,11 @@ import {
   saveCustomPolicy as saveCustomPolicyApi,
   deleteCustomPolicy as deleteCustomPolicyApi,
   processIntervention,
-  removeInstagramAccount
+  removeInstagramAccount,
+  initiateMFASetup,
+  finalizeMFASetup,
+  disableMFA,
+  getMFAStatus
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -28,8 +32,8 @@ interface DashboardProps {
 }
 
 
-type Tab = 'overview' | 'controls' | 'plan';
-type PlanType = 'standard' | 'plus' | 'premium' | 'max';
+type Tab = 'overview' | 'controls' | 'plan' | 'security';
+type PlanType = 'standard' | 'plus' | 'pro' | 'max';
 
 interface DashboardStats {
   scanned: number;
@@ -40,12 +44,14 @@ interface DashboardStats {
 interface UserSettings {
   plan: PlanType;
   policies: {
-    spam: boolean;
-    hateSpeech: boolean;
-    harassment: boolean;
-    violence: boolean;
+    profanity: boolean;
     sexualContent: boolean;
+    hateSpeech: boolean;
     selfHarm: boolean;
+    violence: boolean;
+    negativity: boolean;
+    harassment: boolean;
+    spam: boolean;
   };
   customInstructions: string;
   confidenceThreshold: number;
@@ -58,6 +64,7 @@ interface Account {
   name: string;
   handle: string;
   profilePictureUrl?: string;
+  isDeauthorized?: boolean;
 }
 
 const MOCK_ACCOUNTS: Account[] = [];
@@ -67,8 +74,8 @@ const MOCK_ACCOUNTS: Account[] = [];
 const PLANS = {
   standard: { price: 5, label: 'Standard', features: ['5k comments/mo', '1 social account', 'Standard Protection'] },
   plus: { price: 15, label: 'Plus', features: ['20k comments/mo', '2 social accounts', 'Standard Protection'] },
-  premium: { price: 30, label: 'Premium', features: ['50k comments/mo', '5 social accounts', 'Multi-model AI', 'Custom Policies'] },
-  max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Multi-model AI', 'Custom Policies'] }
+  pro: { price: 30, label: 'Pro', features: ['50k comments/mo', '5 social accounts', 'Advanced Reasoning', 'Custom Policies'] },
+  max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Advanced Reasoning', 'Custom Policies'] }
 };
 
 // Helper to load Razorpay SDK
@@ -90,7 +97,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') as Tab;
-    return (['overview', 'controls', 'plan'] as Tab[]).includes(tab) ? tab : 'overview';
+    return (['overview', 'controls', 'plan', 'security'] as Tab[]).includes(tab) ? tab : 'overview';
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingInterventions, setIsLoadingInterventions] = useState(false);
@@ -107,6 +114,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   
+  // MFA Setup State
+  const [mfaStatus, setMfaStatus] = useState<boolean>(false);
+  const [isMFASetupOpen, setIsMFASetupOpen] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaVerificationCode, setMfaVerificationCode] = useState('');
+  const [isMFAInitLoading, setIsMFAInitLoading] = useState(false);
+  const [isMFAVerifyLoading, setIsMFAVerifyLoading] = useState(false);
+  
   // RAW Data for current account
   const [rawAccountInfo, setRawAccountInfo] = useState<AccountInfo | null>(null);
 
@@ -120,12 +135,34 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [interventionsLimit, setInterventionsLimit] = useState(10);
   const [settings, setSettings] = useState<UserSettings>({
     plan: 'standard', // Default start plan
-    policies: { spam: true, hateSpeech: true, harassment: false, violence: false, sexualContent: false, selfHarm: false },
+    policies: { 
+        profanity: true, 
+        sexualContent: true, 
+        hateSpeech: true, 
+        selfHarm: false, 
+        violence: false, 
+        negativity: false, 
+        harassment: false, 
+        spam: true 
+    },
     customInstructions: '',
     confidenceThreshold: 80,
     selectedCustomPolicies: [],
     customPolicyDescriptions: {}
   });
+  const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
+
+  const isDirty = React.useMemo(() => {
+    if (!originalSettings) return false;
+    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  }, [settings, originalSettings]);
+
+  const handleCancelChanges = () => {
+    if (originalSettings) {
+        setSettings(originalSettings);
+        showToast('Changes reverted', 'success');
+    }
+  };
 
   // Custom Policy Form State
   const [isCustomPolicyFormOpen, setIsCustomPolicyFormOpen] = useState(false);
@@ -182,10 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const loadData = async (initialLoad = false, targetAccountId?: string) => {
     setIsLoading(true);
     try {
-      const token = getAuthToken();
-      if (!token) return;
-
-      const dashboardData = await getDashboardInfo(token);
+      const dashboardData = await getDashboardInfo();
       const { accounts: accountData, plan_type } = dashboardData;
       
       // Always update plan even if no accounts
@@ -199,7 +233,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             id: acc.account_id,
             name: acc.account_name,
             handle: acc.account_name.toLowerCase().replace(/\s+/g, '_'), // Remove mock '@' prefix
-            profilePictureUrl: acc.profile_picture_url
+            profilePictureUrl: acc.profile_picture_url,
+            isDeauthorized: acc.is_deauthorized || false
         }));
         setAccounts(mappedAccounts);
 
@@ -214,24 +249,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             id: selected.account_id,
             name: selected.account_name,
             handle: selected.account_name.toLowerCase().replace(/\s+/g, '_'),
-            profilePictureUrl: selected.profile_picture_url
+            profilePictureUrl: selected.profile_picture_url,
+            isDeauthorized: selected.is_deauthorized || false
         });
         setRawAccountInfo(selected);
 
         // Map policies string to object
         const pList = selected.policies.split(',').map(s => s.trim());
-        setSettings(prev => ({
-            ...prev,
-            plan: (plan_type || 'standard') as PlanType, // Use global plan_type
+
+        const newSettings: UserSettings = {
+            plan: (plan_type || 'standard') as PlanType,
             policies: {
-                spam: pList.includes('spam'),
-                hateSpeech: pList.includes('hateSpeech'),
-                harassment: pList.includes('harassment'),
-                violence: pList.includes('violence'),
+                profanity: pList.includes('profanity'),
                 sexualContent: pList.includes('sexualContent'),
-                selfHarm: pList.includes('selfHarm')
+                hateSpeech: pList.includes('hateSpeech'),
+                selfHarm: pList.includes('selfHarm'),
+                violence: pList.includes('violence'),
+                negativity: pList.includes('negativity'),
+                harassment: pList.includes('harassment'),
+                spam: pList.includes('spam')
             },
-            customInstructions: selected.custom_policy || '', // Legacy/Standalone field (if still used)
+            customInstructions: selected.custom_policy || '',
             confidenceThreshold: selected.confidence_threshold || 80,
             selectedCustomPolicies: (() => {
                 try {
@@ -245,7 +283,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                 acc[d.policy_name] = d.description;
                 return acc;
             }, {})
-        }));
+        };
+
+        setSettings(newSettings);
+        setOriginalSettings(newSettings);
+
 
         await fetchInterventions(selected.account_id, interventionsLimit);
 
@@ -282,10 +324,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const fetchInterventions = async (accountId: string, limit: number) => {
     setIsLoadingInterventions(true);
     try {
-        const token = getAuthToken();
-        if (!token) return;
-
-        const interventionsData = await getInterventions(token, accountId, limit);
+        const interventionsData = await getInterventions(accountId, limit);
         const mappedActivity: ModeratedCommentLog[] = interventionsData.map(item => ({
             id: item.comment_id,
             author: item.username || 'Anonymous', 
@@ -326,6 +365,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
   useEffect(() => {
     loadData(true);
+    checkMFA();
 
     // Check for Instagram OAuth code in URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -333,19 +373,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     if (code) {
       handleInstagramCallback(code);
     } else {
-        // If no code, we still check URL params for state sync if needed
         // but loadData is already called with true above
     }
   }, []);
 
+  const checkMFA = async () => {
+    try {
+        const isEnabled = await getMFAStatus();
+        setMfaStatus(isEnabled);
+    } catch (error) {
+        console.error("Failed to check MFA status", error);
+    }
+  };
+
   const handleInstagramCallback = async (code: string) => {
     setIsLoading(true);
     try {
-      const token = getAuthToken();
-      if (!token) return;
-
-      const result = await addInstagramAccount(token, code);
-      console.log("Account added:", result);
+      const result = await addInstagramAccount(code);
       
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -367,21 +411,57 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   };
 
 
+  const handleEnableMFA = async () => {
+    setIsMFAInitLoading(true);
+    try {
+        const secret = await initiateMFASetup();
+        setMfaSecret(secret);
+        setIsMFASetupOpen(true);
+    } catch (error: any) {
+        showToast(error.message || "Failed to initiate MFA setup", "error");
+    } finally {
+        setIsMFAInitLoading(false);
+    }
+  };
+
+  const handleVerifyMFA = async () => {
+    if (!mfaVerificationCode) return;
+    setIsMFAVerifyLoading(true);
+    try {
+        await finalizeMFASetup(mfaVerificationCode);
+        setMfaStatus(true);
+        setIsMFASetupOpen(false);
+        setMfaSecret(null);
+        setMfaVerificationCode('');
+        showToast("MFA enabled successfully!");
+    } catch (error: any) {
+        showToast(error.message || "Invalid code", "error");
+    } finally {
+        setIsMFAVerifyLoading(false);
+    }
+  };
+
+  const handleDisableMFA = async () => {
+    try {
+        await disableMFA();
+        setMfaStatus(false);
+        showToast("MFA disabled");
+    } catch (error: any) {
+        showToast(error.message || "Failed to disable MFA", "error");
+    }
+  };
+
   const handleSaveSettings = async () => {
     if (!currentAccount || !rawAccountInfo) return;
 
     setIsSaving(true);
     try {
-        const token = getAuthToken();
-        if (!token) throw new Error("No auth token");
-
         const policiesStr = Object.entries(settings.policies)
             .filter(([_, v]) => v)
             .map(([k, _]) => k)
             .join(', ');
 
         await saveDashboardControls(
-            token,
             currentAccount.id,
             rawAccountInfo.owner_user_id,
             policiesStr,
@@ -389,8 +469,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             JSON.stringify(settings.selectedCustomPolicies),
             settings.confidenceThreshold
         );
-
-        showToast('Settings saved successfully!');
+      
+      // We assume custom policies are saved individually as they change, 
+      // but for the sake of "Dirty State" we treat them as part of the whole snapshot.
+      // Ideally custom policies save immediately, but if we want to batch them, we'd need bulk update API.
+      // For now, let's assume 'saveDashboardControls' only does standard + threshold.
+      // But we update originalSettings to match current settings to clear dirty state.
+      
+      setOriginalSettings(settings);
+      showToast('Settings saved successfully!');
     } catch (error: any) {
         console.error("Failed to save settings", error);
         if (error.status === 401 || error.status === 403) {
@@ -414,11 +501,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     }
 
     try {
-        const token = getAuthToken();
-        if (!token) throw new Error("No auth token");
-
         setIsSaving(true);
-        await saveCustomPolicyApi(token, currentAccount.id, newPolicyName, structuredDescription);
+        await saveCustomPolicyApi(currentAccount.id, newPolicyName, structuredDescription);
         
         // Refresh local state
         setSettings(prev => ({
@@ -436,7 +520,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         setEditingPolicyName(null);
         showToast("Custom policy saved successfully");
     } catch (error: any) {
-        if (error.status === 403 && settings.plan === 'premium') {
+        if (error.status === 403 && settings.plan === 'pro') {
             showToast("Limit reached. Upgrade to Max for up to 20 custom policies.", "error");
         } else {
             showToast(error.message || "Failed to save custom policy", "error");
@@ -450,11 +534,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     if (!currentAccount) return;
 
     try {
-        const token = getAuthToken();
-        if (!token) throw new Error("No auth token");
-
         setIsSaving(true);
-        await deleteCustomPolicyApi(token, currentAccount.id, policyName);
+        await deleteCustomPolicyApi(currentAccount.id, policyName);
         
         // Refresh local state
         setSettings(prev => {
@@ -493,17 +574,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     if (!comment) return;
 
     try {
-        const token = getAuthToken();
-        if (!token) return;
-
-        // Optimistic update
-        setActivity(prev => prev.filter(c => c.id !== id));
-        
         // Match frontend action to API action_type
         const actionType = action === 'RESTRICT' ? 'USER' : 'COMMENT';
-        
+
         await processIntervention(
-            token, 
             currentAccount.id, 
             id, 
             comment.commenter_id || null, 
@@ -511,12 +585,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             actionType
         );
         
-        showToast(`Action ${action} requested successfully.`);
+        showToast(`Action "${action}" queued. It will be synced in a few minutes.`);
     } catch (error) {
         console.error("Failed to process intervention", error);
         showToast("Failed to process intervention", "error");
-        // Re-fetch to restore state
-        fetchInterventions(currentAccount.id, interventionsLimit);
     }
   };
 
@@ -525,10 +597,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     
     setIsSaving(true);
     try {
-        const token = getAuthToken();
-        if (!token) return;
-
-        await removeInstagramAccount(token, accountToDelete.id);
+        await removeInstagramAccount(accountToDelete.id);
         showToast("Account removed successfully");
         setIsDeleteModalOpen(false);
         setAccountToDelete(null);
@@ -610,7 +679,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     paymentObject.open();
   };
 
-  const canEditCustomPolicy = settings.plan === 'premium' || settings.plan === 'max';
+  const canEditCustomPolicy = settings.plan === 'pro' || settings.plan === 'max';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
@@ -768,6 +837,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                >
                   <CreditCard className="w-4 h-4" /> Plan & Billing
                </button>
+               <button
+                 onClick={() => setActiveTab('security')}
+                 className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
+                    activeTab === 'security' 
+                    ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                 }`}
+               >
+                  <Lock className="w-4 h-4" /> Security
+               </button>
             </div>
          </div>
       </div>
@@ -837,7 +916,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             <>
               {/* --- OVERVIEW TAB --- */}
               {activeTab === 'overview' && (
-                <div className="animate-fade-in">
+                <div className="animate-fade-in relative">
+                  {/* Deauthorization Warning Overlay */}
+                  {currentAccount?.isDeauthorized && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm rounded-xl"></div>
+                      <div className="relative bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 rounded-2xl p-8 max-w-md text-center shadow-xl">
+                        <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <ShieldAlert className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Account Disconnected</h3>
+                        <p className="text-slate-600 dark:text-slate-400 mb-6">
+                          You have de-authorized ShieldGram from your Instagram account. Please reconnect to resume protection.
+                        </p>
+                        <button
+                          onClick={() => {
+                              const redirectUri = `${window.location.origin}/dashboard`;
+                              const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID;
+                              const instagramAuthUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages`;
+                              window.location.href = instagramAuthUrl;
+                          }}
+                          className="px-6 py-3 rounded-xl font-semibold bg-brand-600 hover:bg-brand-700 text-white transition-all"
+                        >
+                          Reconnect Instagram
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Overview</h1>
                     <div className="flex items-center gap-4">
@@ -852,7 +957,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <span className="text-xs font-mono text-slate-400 flex items-center gap-2">
                            <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${
                              settings.plan === 'max' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
-                             settings.plan === 'premium' ? 'bg-brand-100 text-brand-700 border-brand-200' :
+                             settings.plan === 'pro' ? 'bg-brand-100 text-brand-700 border-brand-200' :
                              'bg-slate-100 text-slate-600 border-slate-200'
                            }`}>
                              {settings.plan} Plan
@@ -955,8 +1060,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                               <div className="flex items-center gap-2 self-end sm:self-center">
                                 <button 
                                     onClick={() => handleAction(comment.id, 'SAFE')}
-                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                                    title="Mark as Safe (False Positive)"
+                                    disabled={comment.actionTaken === 'DELETE'}
+                                    className={`p-2 rounded-lg transition-colors ${
+                                        comment.actionTaken === 'DELETE' 
+                                        ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed' 
+                                        : 'text-slate-400 dark:text-slate-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
+                                    }`}
+                                    title={comment.actionTaken === 'DELETE' ? "Cannot restore deleted comment" : "Mark as Safe (False Positive)"}
                                 >
                                     <CheckCircle className="w-5 h-5" />
                                 </button>
@@ -1005,7 +1115,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
               {/* --- CONTROLS TAB --- */}
               {activeTab === 'controls' && (
-                <div className="animate-fade-in max-w-4xl mx-auto">
+                <div className="animate-fade-in max-w-3xl mx-auto relative">
+                   {/* Deauthorization Warning Banner */}
+                   {currentAccount?.isDeauthorized && (
+                     <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 mb-8 text-center">
+                       <div className="flex items-center justify-center gap-3 mb-3">
+                         <ShieldAlert className="w-6 h-6 text-red-500" />
+                         <h3 className="font-bold text-red-600 dark:text-red-400">Account Disconnected</h3>
+                       </div>
+                       <p className="text-sm text-red-600/80 dark:text-red-400/80 mb-4">
+                         Controls are disabled because you de-authorized ShieldGram. Reconnect your Instagram account or remove it below.
+                       </p>
+                       <button
+                         onClick={() => {
+                             const redirectUri = `${window.location.origin}/dashboard`;
+                             const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID;
+                             const instagramAuthUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages`;
+                             window.location.href = instagramAuthUrl;
+                         }}
+                         className="px-5 py-2 rounded-lg font-semibold bg-red-600 hover:bg-red-700 text-white text-sm transition-all"
+                       >
+                         Reconnect Instagram
+                       </button>
+                     </div>
+                   )}
+                   
                    <div className="flex items-center justify-between mb-8">
                       <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Moderation Policy</h1>
                       
@@ -1017,361 +1151,369 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                    </div>
 
                    {/* Plan Warning Banner */}
-                   {(!canEditCustomPolicy) && (
-                     <div className="bg-brand-50 dark:bg-brand-900/10 border border-brand-100 dark:border-brand-900 p-4 rounded-xl mb-8 flex items-start gap-3">
-                        <Zap className="w-5 h-5 text-brand-600 dark:text-brand-400 mt-0.5 fill-current" />
-                        <div>
-                           <h3 className="font-semibold text-brand-900 dark:text-brand-100">Unlock Advanced Controls</h3>
-                           <p className="text-sm text-brand-700 dark:text-brand-300 mt-1">
-                              You are currently on the <span className="font-bold uppercase">{settings.plan}</span> plan. Upgrade to Premium or Max to define custom AI instructions and specific policy nuances.
-                           </p>
-                        </div>
-                        <button 
-                            onClick={() => setActiveTab('plan')}
-                            className="ml-auto text-xs bg-brand-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-brand-700"
-                        >
-                           Upgrade
-                        </button>
-                     </div>
-                   )}
-
-                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-8">
-                      <h3 className="font-semibold text-lg mb-4 text-slate-900 dark:text-white flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-brand-500" /> Standard Protection
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                         {Object.entries(settings.policies).map(([key, value]) => {
-                             const labels: Record<string, string> = {
-                               spam: 'Spam',
-                               hateSpeech: 'Hate Speech',
-                               harassment: 'Harassment',
-                               violence: 'Violence',
-                               sexualContent: 'Sexual Content',
-                               selfHarm: 'Self-harm' // Exact key from user request requirements
-                             };
-                             const label = labels[key] || key;
-
-                             return (
-                             <label 
-                                key={key} 
-                                className={`
-                                    group relative flex items-center p-4 rounded-xl border cursor-pointer transition-all duration-200 select-none
-                                    ${value 
-                                        ? 'bg-brand-50/50 dark:bg-brand-900/10 border-brand-200 dark:border-brand-800 ring-1 ring-brand-200 dark:ring-brand-800' 
-                                        : 'bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                                    }
-                                `}
-                            >
-                                <input 
-                                    type="checkbox" 
-                                    checked={value}
-                                    onChange={(e) => setSettings({...settings, policies: {...settings.policies, [key]: e.target.checked}})}
-                                    className="sr-only"
-                                />
-                                
-                                <div className={`
-                                    w-6 h-6 rounded-md flex items-center justify-center transition-all duration-200 flex-shrink-0
-                                    ${value 
-                                        ? 'bg-brand-600 border border-brand-600 shadow-sm scale-100' 
-                                        : 'bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 scale-95 group-hover:scale-100 group-hover:border-slate-400'
-                                    }
-                                `}>
-                                    <Check className={`w-3.5 h-3.5 text-white transition-all duration-200 ${value ? 'opacity-100 rotate-0' : 'opacity-0 -rotate-90'}`} strokeWidth={3} />
-                                </div>
-
-                                <div className="ml-3 flex flex-col">
-                                    <span className={`font-semibold text-sm transition-colors ${value ? 'text-brand-900 dark:text-brand-100' : 'text-slate-700 dark:text-slate-300'}`}>
-                                        {label}
-                                    </span>
-                                    <span className={`text-xs mt-0.5 ${value ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400'}`}>
-                                        {value ? 'Active' : 'Disabled'}
-                                    </span>
-                                </div>
-                                
-                                {value && <div className="absolute inset-0 rounded-xl bg-brand-400/5 dark:bg-brand-400/10 pointer-events-none" />}
-                            </label>
-                         );
-                         })}
+                    {(!canEditCustomPolicy) && (
+                      <div className="bg-brand-50 dark:bg-brand-900/10 border border-brand-100 dark:border-brand-900 p-4 rounded-xl mb-8 flex items-start gap-3">
+                         <Zap className="w-5 h-5 text-brand-600 dark:text-brand-400 mt-0.5 fill-current" />
+                         <div>
+                            <h3 className="font-semibold text-brand-900 dark:text-brand-100">Unlock Advanced Controls</h3>
+                            <p className="text-sm text-brand-700 dark:text-brand-300 mt-1">
+                               You are currently on the <span className="font-bold uppercase">{settings.plan}</span> plan. Upgrade to Pro or Max to define custom AI instructions and specific policy nuances.
+                            </p>
+                         </div>
+                         <button 
+                             onClick={() => setActiveTab('plan')}
+                             className="ml-auto text-xs bg-brand-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-brand-700"
+                         >
+                            Upgrade
+                         </button>
                       </div>
+                    )}
 
-                   </div>
 
+                    {/* Controls Section - Disabled when deauthorized */}
+                    <div className={currentAccount?.isDeauthorized ? 'opacity-50 pointer-events-none select-none' : ''}>
+                        {/* Standard Protection */}
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 py-10 px-6">
+                            <h3 className="font-semibold text-lg mb-6 text-slate-900 dark:text-white flex items-center gap-2">
+                                <Shield className="w-5 h-5 text-brand-500" /> Standard Protection
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {Object.entries(settings.policies).map(([key, value]) => {
+                                    const labels: Record<string, string> = {
+                                        profanity: 'Profanity',
+                                        sexualContent: 'Sexual Content',
+                                        hateSpeech: 'Hate Speech',
+                                        selfHarm: 'Self-harm',
+                                        violence: 'Violence',
+                                        negativity: 'Negativity',
+                                        harassment: 'Harassment',
+                                        spam: 'Spam'
+                                    };
+                                    const label = labels[key] || key;
 
-                    {/* Custom Policies Section */}
-                    <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative ${!canEditCustomPolicy ? 'opacity-70' : ''}`}>
-                       <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                             <Sliders className="w-5 h-5 text-purple-500" /> Custom Policies
-                          </h3>
-                          {canEditCustomPolicy && (
-                             <button
-                                onClick={() => {
-                                   setNewPolicyName('');
-                                   setNewPolicyCondition('');
-                                   setNewPolicyAction('spam');
-                                   setEditingPolicyName(null);
-                                   setIsCustomPolicyFormOpen(true);
-                                }}
-                                className="flex items-center gap-1.5 text-xs font-bold bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 px-3 py-2 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-all border border-brand-200 dark:border-brand-800/50 uppercase tracking-tight"
-                             >
-                                <Plus className="w-3.5 h-3.5" /> Add New Policy
-                             </button>
-                          )}
-                       </div>
-                       
-                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                          Define and toggle custom moderation rules tailored to your brand's unique needs.
-                       </p>
-
-                       {!canEditCustomPolicy ? (
-                          <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 flex flex-col items-center text-center">
-                             <Lock className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-3" />
-                             <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">Premium Feature</p>
-                             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mb-4">
-                                Upgrade to Premium or Max to create custom AI policies and refined moderation instructions.
-                             </p>
-                             <button 
-                                onClick={() => setActiveTab('plan')}
-                                className="text-xs font-bold text-brand-600 dark:text-brand-400 underline underline-offset-4"
-                             >
-                                View Plans
-                             </button>
-                          </div>
-                       ) : (
-                          <div className="space-y-3">
-                             {Object.keys(settings.customPolicyDescriptions).length === 0 ? (
-                                <div className="text-center py-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                                   <AlertCircle className="w-6 h-6 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                                   <p className="text-xs text-slate-500 dark:text-slate-500">No custom policies defined yet.</p>
-                                </div>
-                             ) : (
-                                Object.entries(settings.customPolicyDescriptions).map(([name, desc]) => {
-                                   const isSelected = settings.selectedCustomPolicies.includes(name);
-                                   return (
-                                      <div 
-                                         key={name}
-                                         className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-200 ${
-                                            isSelected 
-                                            ? 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800/50' 
-                                            : 'bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800'
-                                         }`}
-                                      >
-                                         <button 
-                                            onClick={() => toggleCustomPolicy(name)}
-                                            className={`w-5 h-5 rounded flex-shrink-0 border transition-all ${
-                                                isSelected 
-                                                ? 'bg-purple-600 border-purple-600' 
-                                                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
-                                            }`}
-                                         >
-                                            {isSelected && <Check className="w-3.5 h-3.5 text-white mx-auto" strokeWidth={4} />}
-                                         </button>
-                                         
-                                         <div className="flex-1 min-w-0" onClick={() => toggleCustomPolicy(name)} style={{cursor: 'pointer'}}>
-                                            <h4 className={`text-sm font-bold truncate ${isSelected ? 'text-purple-950 dark:text-purple-100' : 'text-slate-900 dark:text-white'}`}>
-                                               {name}
-                                            </h4>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
-                                               {desc}
-                                            </p>
-                                         </div>
-
-                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                               onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setEditingPolicyName(name);
-                                                  setNewPolicyName(name);
-                                                  
-                                                  // Parse structured description
-                                                  const match = (desc as string).match(/^Treat comments with (.*) as (.*)$/);
-                                                  if (match) {
-                                                     setNewPolicyCondition(match[1]);
-                                                     setNewPolicyAction(match[2]);
-                                                  } else {
-                                                     setNewPolicyCondition(desc);
-                                                     setNewPolicyAction('spam');
-                                                  }
-                                                  
-                                                  setIsCustomPolicyFormOpen(true);
-                                               }}
-                                               className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors"
-                                               title="Edit Policy"
-                                            >
-                                               <Edit2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button 
-                                               onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleDeleteCustomPolicy(name);
-                                               }}
-                                               className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                                               title="Delete Policy"
-                                            >
-                                               <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                         </div>
-                                      </div>
-                                   );
-                                })
-                             )}
-                          </div>
-                       )}
-
-                       {/* Custom Policy Form Modal */}
-                       {isCustomPolicyFormOpen && (
-                          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
-                             <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
-                                <div className="p-6">
-                                   <div className="flex items-center justify-between mb-4">
-                                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                                         {editingPolicyName ? 'Edit Policy' : 'Create Custom Policy'}
-                                      </h3>
-                                      <button 
-                                         onClick={() => setIsCustomPolicyFormOpen(false)}
-                                         className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                                      >
-                                         <AlertCircle className="w-5 h-5 rotate-45" />
-                                      </button>
-                                   </div>
-
-                                   <div className="space-y-6">
-                                      <div>
-                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Policy Name</label>
-                                         <input 
-                                            type="text"
-                                            value={newPolicyName}
-                                            onChange={(e) => setNewPolicyName(e.target.value)}
-                                            disabled={!!editingPolicyName}
-                                            placeholder="e.g. Scams, Competitors, Toxicity"
-                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all outline-none disabled:opacity-50"
-                                         />
-                                      </div>
-                                      
-                                      <div className="bg-slate-50 dark:bg-slate-950/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                                         <div className="flex flex-col gap-3">
-                                            <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
-                                               <span>Treat comments with</span>
-                                            </div>
-                                            
-                                            <textarea 
-                                               value={newPolicyCondition}
-                                               onChange={(e) => setNewPolicyCondition(e.target.value)}
-                                               placeholder="e.g. mentions of XYZ or crypto scams"
-                                               className="w-full h-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all outline-none resize-none text-sm"
+                                    return (
+                                        <label 
+                                            key={key} 
+                                            className={`
+                                                group relative flex items-center p-3 rounded-xl border cursor-pointer transition-all duration-200 select-none
+                                                ${value 
+                                                    ? 'bg-brand-50/50 dark:bg-brand-900/10 border-brand-200 dark:border-brand-800 ring-1 ring-brand-200 dark:ring-brand-800' 
+                                                    : 'bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                                }
+                                            `}
+                                        >
+                                            <input 
+                                                type="checkbox" 
+                                                checked={value}
+                                                onChange={(e) => setSettings({...settings, policies: {...settings.policies, [key]: e.target.checked}})}
+                                                className="sr-only"
                                             />
-
-                                            <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
-                                               <span>as</span>
-                                               <select 
-                                                  value={newPolicyAction}
-                                                  onChange={(e) => setNewPolicyAction(e.target.value)}
-                                                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none text-sm font-bold min-w-[120px]"
-                                               >
-                                                  <option value="spam">Spam</option>
-                                                  <option value="hateSpeech">Hate Speech</option>
-                                                  <option value="harassment">Harassment</option>
-                                                  <option value="violence">Violence</option>
-                                                  <option value="sexualContent">Sexual Content</option>
-                                                  <option value="selfHarm">Self Harm</option>
-                                               </select>
+                                            <div className={`
+                                                w-5 h-5 rounded-md flex items-center justify-center transition-all duration-200 flex-shrink-0
+                                                ${value 
+                                                    ? 'bg-brand-600 border border-brand-600 shadow-sm scale-100' 
+                                                    : 'bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 scale-95 group-hover:scale-100'
+                                                }
+                                            `}>
+                                                <Check className={`w-3 h-3 text-white transition-all duration-200 ${value ? 'opacity-100 rotate-0' : 'opacity-0 -rotate-90'}`} strokeWidth={3} />
                                             </div>
-                                         </div>
-                                      </div>
-                                   </div>
+                                            <span className={`ml-2 text-xs font-bold truncate ${value ? 'text-brand-900 dark:text-brand-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                {label}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
 
-                                   <div className="mt-8 flex gap-3">
-                                      <button 
-                                         onClick={() => setIsCustomPolicyFormOpen(false)}
-                                         className="flex-1 px-4 py-3 rounded-xl font-bold text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                                      >
-                                         Cancel
-                                      </button>
-                                      <button 
-                                         onClick={handleSaveCustomPolicy}
-                                         disabled={!newPolicyName || !newPolicyCondition || isSaving}
-                                         className="flex-1 px-4 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
-                                      >
-                                         {isSaving ? 'Saving...' : 'Save Policy'}
-                                      </button>
-                                   </div>
+                        {/* Custom Policies */}
+                        <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 py-10 px-6 relative ${!canEditCustomPolicy ? 'opacity-70' : ''}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                                    <Sliders className="w-5 h-5 text-purple-500" /> Custom Policies
+                                </h3>
+                                {canEditCustomPolicy && (
+                                    <button
+                                        onClick={() => {
+                                            setNewPolicyName('');
+                                            setNewPolicyCondition('');
+                                            setNewPolicyAction('spam');
+                                            setEditingPolicyName(null);
+                                            setIsCustomPolicyFormOpen(true);
+                                        }}
+                                        className="flex items-center gap-1.5 text-xs font-bold bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 px-3 py-2 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-all border border-brand-200 dark:border-brand-800/50 uppercase tracking-tight"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add New
+                                    </button>
+                                )}
+                            </div>
+
+                            {!canEditCustomPolicy ? (
+                                <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 flex flex-col items-center text-center justify-center">
+                                    <Lock className="w-8 h-8 text-slate-300 dark:text-slate-700 mb-3" />
+                                    <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">Pro Feature</p>
+                                    <button 
+                                        onClick={() => setActiveTab('plan')}
+                                        className="text-xs font-bold text-brand-600 dark:text-brand-400 underline underline-offset-4"
+                                    >
+                                        View Plans
+                                    </button>
                                 </div>
-                             </div>
-                          </div>
-                       )}
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                    {Object.keys(settings.customPolicyDescriptions).length === 0 ? (
+                                        <div className="col-span-full text-center py-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                                            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">No custom policies</p>
+                                        </div>
+                                    ) : (
+                                        Object.entries(settings.customPolicyDescriptions).map(([name, desc]) => {
+                                            const isSelected = settings.selectedCustomPolicies.includes(name);
+                                            return (
+                                                <div 
+                                                    key={name}
+                                                    className={`group flex items-start gap-2.5 p-3 rounded-xl border transition-all duration-200 ${
+                                                        isSelected 
+                                                        ? 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800/50' 
+                                                        : 'bg-white dark:bg-slate-950/50 border-slate-200 dark:border-slate-800'
+                                                    }`}
+                                                >
+                                                    <button 
+                                                        onClick={() => toggleCustomPolicy(name)}
+                                                        className={`w-4 h-4 rounded flex-shrink-0 border transition-all mt-0.5 ${
+                                                            isSelected 
+                                                            ? 'bg-purple-600 border-purple-600' 
+                                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                                                        }`}
+                                                    >
+                                                        {isSelected && <Check className="w-2.5 h-2.5 text-white mx-auto" strokeWidth={4} />}
+                                                    </button>
+                                                    
+                                                    <div className="flex-1 min-w-0 pointer-events-none sm:pointer-events-auto" onClick={() => toggleCustomPolicy(name)} style={{cursor: 'pointer'}}>
+                                                        <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-purple-950 dark:text-purple-100' : 'text-slate-900 dark:text-white'}`}>
+                                                            {name}
+                                                        </h4>
+                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                                            {desc as string}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setEditingPolicyName(name);
+                                                                setNewPolicyName(name);
+                                                                const match = (desc as string).match(/^Treat comments with (.*) as (.*)$/);
+                                                                if (match) {
+                                                                    setNewPolicyCondition(match[1]);
+                                                                    setNewPolicyAction(match[2]);
+                                                                } else {
+                                                                    setNewPolicyCondition(desc as string);
+                                                                    setNewPolicyAction('spam');
+                                                                }
+                                                                setIsCustomPolicyFormOpen(true);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-brand-600 transition-colors"
+                                                        >
+                                                            <Edit2 className="w-3 h-3" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteCustomPolicy(name);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Sensitivity */}
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+                            <div className="flex items-center gap-4">
+                                <div className="p-2 bg-brand-50 dark:bg-brand-900/20 rounded-lg text-brand-600 dark:text-brand-400">
+                                    <Target className="w-5 h-5" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-sm font-bold text-slate-900 dark:text-white">AI Sensitivity</label>
+                                        <div className="group relative">
+                                            <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-brand-500 transition-colors cursor-help" />
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-800 text-white text-xs rounded-xl shadow-xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all pointer-events-none z-50 leading-relaxed font-medium">
+                                                • <span className="text-brand-300 font-bold">Aggressive:</span> Flags more comments (potential false positives).
+                                                <br/>
+                                                • <span className="text-brand-300 font-bold">Strict:</span> Only flags very obvious violations.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Configure how confident AI must be to flag a comment</p>
+                                </div>
+                                <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 mx-2 hidden sm:block"></div>
+                            </div>
+                                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+                                    {[
+                                        { label: 'Aggressive', value: 75 },
+                                        { label: 'Balanced', value: 90 },
+                                        { label: 'Strict', value: 99 }
+                                    ].map((option) => {
+                                        const isActive = (
+                                            option.value === 75 && settings.confidenceThreshold < 90
+                                        ) || (
+                                            option.value === 90 && settings.confidenceThreshold >= 90 && settings.confidenceThreshold < 99
+                                        ) || (
+                                            option.value === 99 && settings.confidenceThreshold >= 99
+                                        );
+                                        
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                onClick={() => setSettings({...settings, confidenceThreshold: option.value})}
+                                                className={`
+                                                    px-4 py-1.5 rounded-md text-xs font-bold transition-all
+                                                    ${isActive 
+                                                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' 
+                                                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                                    }
+                                                `}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                        </div>
+
+                        {/* Floating Action Bar - Persistent Save */}
+                        {isDirty && (
+                            <div className="fixed bottom-8 right-8 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+                                <div className="bg-slate-900 text-white p-2 pl-5 pr-2 rounded-2xl shadow-2xl shadow-slate-900/40 flex items-center gap-6 border border-slate-700/50">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                                        <span className="text-sm font-medium">Unsaved changes</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={handleCancelChanges}
+                                            className="px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                                        >
+                                            Discard
+                                        </button>
+                                        <button 
+                                            onClick={handleSaveSettings}
+                                            disabled={isSaving}
+                                            className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Global Confidence Threshold Card */}
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mt-6">
-                       <div className="flex items-center justify-between mb-4">
-                          <div>
-                             <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                               <Target className="w-5 h-5 text-brand-500" /> Global Confidence Threshold
-                             </h3>
-                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                               Minimum AI certainty required to hide a comment. Applies to standard and custom policies.
-                             </p>
-                          </div>
-                          <div className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 rounded-lg text-sm font-bold border border-brand-100 dark:border-brand-800 uppercase tracking-tight shadow-sm">
-                             {settings.confidenceThreshold}%
-                          </div>
-                       </div>
-                       
-                       <div className="px-1 mt-6">
-                          <input 
-                             type="range" 
-                             min="50" 
-                             max="99" 
-                             step="1"
-                             value={settings.confidenceThreshold}
-                             onChange={(e) => setSettings({...settings, confidenceThreshold: parseInt(e.target.value)})}
-                             className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-600 focus:outline-none transition-all"
-                          />
-                          <div className="flex justify-between mt-3 text-xs font-bold text-slate-400 uppercase tracking-tight">
-                             <span>Aggressive (Low Certainty)</span>
-                             <span>Balanced</span>
-                             <span>Strict (High Certainty)</span>
-                          </div>
-                       </div>
-                    </div>
-                    
-
-                   <div className="mt-8 flex justify-end">
-                      <button 
-                        onClick={handleSaveSettings}
-                        disabled={isSaving}
-                        className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-lg font-semibold shadow-md transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                      >
-                         {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                         Save Changes
-                      </button>
-                   </div>
-
-                   <div className="my-10 border-t border-slate-200 dark:border-slate-800"></div>
+                    <div className="my-10 border-t border-slate-200 dark:border-slate-800"></div>
 
                     {/* Danger Zone */}
                     <div className="bg-red-50/30 dark:bg-red-900/5 rounded-xl border border-red-100 dark:border-red-900/30 p-6">
-                       <h3 className="font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-2">
-                          <Trash2 className="w-5 h-5" /> Danger Zone
-                       </h3>
-                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                          <div>
-                             <p className="text-sm font-semibold text-slate-900 dark:text-white">Remove Instagram Account</p>
-                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                Permanently disconnect <span className="font-bold">{currentAccount?.handle}</span> and delete all associated data.
-                             </p>
-                          </div>
-                          <button 
-                             onClick={() => {
-                                setAccountToDelete(currentAccount);
-                                setIsDeleteModalOpen(true);
-                             }}
-                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-red-500/10"
-                          >
-                             Remove Account
-                          </button>
-                       </div>
+                        <h3 className="font-bold text-red-600 dark:text-red-400 flex items-center gap-2 mb-2">
+                            <Trash2 className="w-5 h-5" /> Danger Zone
+                        </h3>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div>
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white">Remove Instagram Account</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    Permanently disconnect <span className="font-bold">{currentAccount?.handle}</span>
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setAccountToDelete(currentAccount);
+                                    setIsDeleteModalOpen(true);
+                                }}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-red-500/10"
+                            >
+                                Remove Account
+                            </button>
+                        </div>
                     </div>
+
+                    {/* Custom Policy Form Modal */}
+                    {isCustomPolicyFormOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+                            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+                                <div className="p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                            {editingPolicyName ? 'Edit Policy' : 'Create Custom Policy'}
+                                        </h3>
+                                        <button 
+                                            onClick={() => setIsCustomPolicyFormOpen(false)}
+                                            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                        >
+                                            <AlertCircle className="w-5 h-5 rotate-45" />
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Policy Name</label>
+                                            <input 
+                                                type="text"
+                                                value={newPolicyName}
+                                                onChange={(e) => setNewPolicyName(e.target.value)}
+                                                disabled={!!editingPolicyName}
+                                                placeholder="e.g. Scams, Competitors"
+                                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none disabled:opacity-50"
+                                            />
+                                        </div>
+                                        
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                                    <span>Treat comments with</span>
+                                                </div>
+                                                <textarea 
+                                                    value={newPolicyCondition}
+                                                    onChange={(e) => setNewPolicyCondition(e.target.value)}
+                                                    className="w-full h-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none resize-none text-sm"
+                                                />
+                                                <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+                                                    <span>as</span>
+                                                    <select 
+                                                        value={newPolicyAction}
+                                                        onChange={(e) => setNewPolicyAction(e.target.value)}
+                                                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none text-sm font-bold min-w-[120px]"
+                                                    >
+                                                        <option value="spam">Spam</option>
+                                                        <option value="hateSpeech">Hate Speech</option>
+                                                        <option value="harassment">Harassment</option>
+                                                        <option value="violence">Violence</option>
+                                                        <option value="sexualContent">Sexual Content</option>
+                                                        <option value="selfHarm">Self Harm</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-8 flex gap-3">
+                                        <button onClick={() => setIsCustomPolicyFormOpen(false)} className="flex-1 px-4 py-3 rounded-xl font-bold text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">Cancel</button>
+                                        <button onClick={handleSaveCustomPolicy} disabled={!newPolicyName || !newPolicyCondition || isSaving} className="flex-1 px-4 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-brand-500/20 shadow-lg disabled:opacity-50">
+                                            {isSaving ? 'Saving...' : 'Save Policy'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
               )}
 
@@ -1543,6 +1685,146 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             </table>
                         </div>
                     </div>
+                  </div>
+              )}
+
+              {/* --- SECURITY TAB --- */}
+              {activeTab === 'security' && (
+                  <div className="animate-fade-in max-w-2xl mx-auto">
+                    <div className="flex items-center justify-between mb-8">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Security Settings</h1>
+                    </div>
+
+                    {/* MFA Status Card - Hidden when setup wizard is active */}
+                    {!isMFASetupOpen && (
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+                        <div className="flex items-center gap-4 mb-8">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${mfaStatus ? 'bg-green-50 dark:bg-green-900/20 text-green-600' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'}`}>
+                                <ShieldCheck className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Multi-Factor Authentication (MFA)</h3>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                                    Secure your account with an extra layer of protection using your preferred authenticator app.
+                                </p>
+                            </div>
+                        </div>
+
+                        {!mfaStatus ? (
+                            <div className="flex flex-col items-center py-6 text-center">
+                                <Lock className="w-12 h-12 text-slate-200 dark:text-slate-800 mb-4" />
+                                <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Authenticator App is Not Active</h4>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md mb-8">
+                                    We recommend enabling MFA to protect your account from unauthorized access. You'll need an app like Google Authenticator or Authy.
+                                </p>
+                                <button 
+                                    onClick={handleEnableMFA}
+                                    disabled={isMFAInitLoading}
+                                    className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {isMFAInitLoading ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <ShieldCheck className="w-4 h-4" />}
+                                    Enable MFA
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col border border-slate-100 dark:border-slate-800 rounded-xl p-6 bg-slate-50/50 dark:bg-slate-950/20">
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                                        <span className="text-sm font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Active Protection</span>
+                                    </div>
+                                    <button 
+                                        onClick={handleDisableMFA}
+                                        className="text-xs text-red-600 dark:text-red-400 font-bold hover:underline"
+                                    >
+                                        Disable MFA
+                                    </button>
+                                </div>
+                                <div className="flex items-start gap-4">
+                                    <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                                        Your account is secured with 2FA. Every time you log in, you will be prompted for a 6-digit code from your authenticator app.
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    )}
+
+                    {/* MFA Setup Step-by-Step UI - Full width when active */}
+                    {isMFASetupOpen && mfaSecret && (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border-2 border-brand-500 dark:border-brand-500/50 p-8 animate-in slide-in-from-top-4 duration-300">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Configure Authenticator App</h3>
+                            
+                            <div className="space-y-8">
+                                <div className="flex gap-4">
+                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center font-bold text-sm border border-slate-200 dark:border-slate-700">1</div>
+                                    <div>
+                                        <h4 className="font-bold text-slate-900 dark:text-white mb-2">Scan or Enter Secret</h4>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                                            Open your authenticator app (Google Authenticator, Authy, etc.) and scan the QR code below, or enter the secret manually.
+                                        </p>
+                                        <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-100 dark:border-slate-800 inline-block">
+                                            {/* QR Code Placeholder - using a service for demo or just instructions */}
+                                            <div className="w-48 h-48 bg-white dark:bg-slate-900 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 mb-4">
+                                                <img 
+                                                    src={`https://quickchart.io/qr?text=${encodeURIComponent(`otpauth://totp/ShieldGram?secret=${mfaSecret}&issuer=ShieldGram`)}&size=200`} 
+                                                    alt="QR Code" 
+                                                    className="w-full h-full p-2"
+                                                />
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Manual Entry Code</p>
+                                                <code className="text-sm font-mono text-brand-600 dark:text-brand-400 break-all bg-brand-50 dark:bg-brand-900/20 px-2 py-1 rounded select-all font-bold">
+                                                    {mfaSecret}
+                                                </code>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center font-bold text-sm border border-slate-200 dark:border-slate-700">2</div>
+                                    <div className="flex-grow">
+                                        <h4 className="font-bold text-slate-900 dark:text-white mb-2">Verify Code</h4>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                                            Enter the 6-digit code currently shown in your app to confirm setup.
+                                        </p>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text"
+                                                maxLength={6}
+                                                value={mfaVerificationCode}
+                                                onChange={(e) => setMfaVerificationCode(e.target.value.replace(/[^0-9]/g, ''))}
+                                                className="w-full sm:w-48 px-4 py-3 bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none transition-all text-center text-2xl font-bold tracking-[0.5em] text-slate-900 dark:text-white"
+                                                placeholder="000000"
+                                            />
+                                            <button 
+                                                onClick={handleVerifyMFA}
+                                                disabled={isMFAVerifyLoading || mfaVerificationCode.length !== 6}
+                                                className="px-6 py-3 bg-brand-600 hover:bg-brand-700 text-white font-black rounded-xl shadow-lg shadow-brand-500/20 transition-all flex items-center gap-2 disabled:opacity-50 uppercase text-xs"
+                                            >
+                                                {isMFAVerifyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Finish"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-10 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                                <button 
+                                    onClick={() => {
+                                        setIsMFASetupOpen(false);
+                                        setMfaSecret(null);
+                                        setMfaVerificationCode('');
+                                    }}
+                                    className="text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                                >
+                                    Cancel Setup
+                                </button>
+                            </div>
+                        </div>
+                    )}
                   </div>
               )}
             </>
