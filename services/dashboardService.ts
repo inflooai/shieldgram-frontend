@@ -11,6 +11,9 @@ const COGNITO_CONFIG = {
 const base = import.meta.env.VITE_DASHBOARD_API_URL || "";
 const DASHBOARD_API_URL = base.endsWith('/') ? base.slice(0, -1) : base;
 
+const pgBase = process.env.LAMBDA_URL || "";
+const PLAYGROUND_API_URL = pgBase.endsWith('/') ? pgBase.slice(0, -1) : pgBase;
+
 export interface AccountInfo {
   account_id: string;
   account_name: string;
@@ -449,3 +452,63 @@ export const processIntervention = async (
   }
 };
 
+export const getPlans = async (): Promise<any[]> => {
+  let idToken = null;
+  try {
+     idToken = await getValidToken();
+  } catch (e) {
+     // Ignore token error for public route
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+
+    const response = await fetch(`${PLAYGROUND_API_URL}/plans`, {
+      method: 'GET',
+      headers: headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+
+    const data = await response.json();
+    return data.plans || [];
+  } catch (error) {
+    console.error("Error fetching plans:", error);
+    return [];
+  }
+};
+
+export const createSubscription = async (plan_id: string): Promise<string | null> => {
+  const idToken = await getValidToken();
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/create-subscription`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ plan_id })
+    });
+
+    if (!response.ok) {
+      console.error("Failed to create subscription:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.subscription_id || null;
+  } catch (error) {
+    console.error("Error creating subscription:", error);
+    return null;
+  }
+};

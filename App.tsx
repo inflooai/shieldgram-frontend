@@ -9,7 +9,7 @@ import Dashboard from './components/Dashboard';
 import AuthPage from './components/AuthPage';
 import LegalModal from './components/LegalModal';
 import { removeAuthToken, getThemeCookie, setThemeCookie } from './utils/auth';
-import { getValidToken } from './services/dashboardService';
+import { getValidToken, getPlans } from './services/dashboardService';
 
 const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [razorpayPlans, setRazorpayPlans] = useState<any[]>([]);
 
   // Determine if we are on the 'dashboard' subdomain
   const isDashboardSubdomain = typeof window !== 'undefined' && window.location.hostname.startsWith('dashboard.');
@@ -44,6 +45,43 @@ const App: React.FC = () => {
     };
     checkAuth();
   }, []);
+
+  // Landing Page Data Detection
+  const [publicCurrency, setPublicCurrency] = useState<'USD' | 'INR'>('USD');
+  
+  useEffect(() => {
+    const loadLandingData = async () => {
+        if (isDashboardSubdomain) return;
+
+        // 1. Detect Location with Fallback
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            if (res.status === 429) throw new Error('429');
+            const data = await res.json();
+            setPublicCurrency(data.country_code === 'IN' ? 'INR' : 'USD');
+        } catch (e) {
+            try {
+                // Fallback API
+                const res = await fetch('http://ip-api.com/json/');
+                const data = await res.json();
+                setPublicCurrency(data.countryCode === 'IN' ? 'INR' : 'USD');
+            } catch (e2) {
+                console.error("Location detection failed, defaulting to USD");
+                setPublicCurrency('USD');
+            }
+        }
+
+        // 2. Fetch Real Plans
+        try {
+            const plans = await getPlans();
+            setRazorpayPlans(plans);
+        } catch (err) {
+            console.error("Error fetching plans for landing page:", err);
+        }
+    };
+
+    loadLandingData();
+  }, [isDashboardSubdomain]);
 
   // Sync state with hash changes for routing
   const [, setHash] = useState(typeof window !== 'undefined' ? window.location.hash : '');
@@ -174,6 +212,7 @@ const App: React.FC = () => {
     );
   }
 
+
   // ==========================================
   // LANDING PAGE (ROOT) RENDER
   // ==========================================
@@ -190,7 +229,11 @@ const App: React.FC = () => {
         <Hero onNavigateDashboard={handleNavigateToDashboard} />
         <DemoSection />
         <Features />
-        <Pricing onNavigateDashboard={handleNavigateToDashboard} />
+        <Pricing 
+          onNavigateDashboard={handleNavigateToDashboard} 
+          currency={publicCurrency} 
+          razorpayPlans={razorpayPlans}
+        />
       </main>
       <Footer />
     </div>

@@ -123,7 +123,7 @@ You agree to indemnify and hold harmless ShieldGram and LightRunner Labs from an
 12) GOVERNING LAW AND JURISDICTION
 These Terms are governed by the laws of India.
 
-Exclusive jurisdiction: the courts located in [INSERT CITY/STATE IN INDIA] will have exclusive jurisdiction over disputes arising out of or relating to these Terms or the Service.
+Exclusive jurisdiction: the courts located in Bengaluru Urban District, Karnataka will have exclusive jurisdiction over disputes arising out of or relating to these Terms or the Service.
 
 
 13) CHANGES TO THESE TERMS

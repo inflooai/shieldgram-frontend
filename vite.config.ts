@@ -24,7 +24,8 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.LAMBDA_URL': JSON.stringify(env.LAMBDA_URL)
+        'process.env.LAMBDA_URL': JSON.stringify(env.LAMBDA_URL),
+        'process.env.RAZORPAY_KEY_ID': JSON.stringify(env.RAZORPAY_KEY_ID)
       },
       resolve: {
         alias: {

@@ -22,7 +22,9 @@ import {
   initiateMFASetup,
   finalizeMFASetup,
   disableMFA,
-  getMFAStatus
+  getMFAStatus,
+  getPlans,
+  createSubscription
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -33,7 +35,7 @@ interface DashboardProps {
 
 
 type Tab = 'overview' | 'controls' | 'plan' | 'security';
-type PlanType = 'standard' | 'plus' | 'pro' | 'max';
+type PlanType = 'standard' | 'plus' | 'pro' | 'max' | '';
 
 interface DashboardStats {
   scanned: number;
@@ -127,6 +129,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
   // Payment State
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
+  const [razorpayPlans, setRazorpayPlans] = useState<any[]>([]);
 
 
   // Data States
@@ -134,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [activity, setActivity] = useState<ModeratedCommentLog[]>([]);
   const [interventionsLimit, setInterventionsLimit] = useState(10);
   const [settings, setSettings] = useState<UserSettings>({
-    plan: 'standard', // Default start plan
+    plan: '', // No plan by default
     policies: { 
         profanity: true, 
         sexualContent: true, 
@@ -225,8 +229,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       // Always update plan even if no accounts
       setSettings(prev => ({
           ...prev,
-          plan: (plan_type || 'standard') as PlanType
+          plan: (plan_type || '') as PlanType
       }));
+
+      // If no plan is selected, force to plan tab
+      if (!plan_type) {
+        setActiveTab('plan');
+      }
+
+      // Fetch Location & Plans (Dynamic Pricing)
+      if (initialLoad) {
+        try {
+            // 1. Detect Country with Fallback
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                if (res.status === 429) throw new Error('429');
+                const data = await res.json();
+                setCurrency(data.country_code === 'IN' ? 'INR' : 'USD');
+            } catch (e) {
+                try {
+                    const res = await fetch('http://ip-api.com/json/');
+                    const data = await res.json();
+                    setCurrency(data.countryCode === 'IN' ? 'INR' : 'USD');
+                } catch (e2) {
+                    console.warn("Location detection failed, defaulting to USD");
+                    setCurrency('USD');
+                }
+            }
+
+            // 2. Fetch Plans from Backend
+            const plans = await getPlans();
+            setRazorpayPlans(plans);
+        } catch (e) {
+            console.error("Failed to load dynamic pricing:", e);
+        }
+      }
 
       if (accountData.length > 0) {
         const mappedAccounts = accountData.map(acc => ({
@@ -399,9 +436,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       showToast('Account linked successfully!');
     } catch (error: any) {
       console.error("Failed to link Instagram account", error);
-      if (error.status === 401 || error.status === 403) {
+      // Clean up URL even on error
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      if (error.status === 401) {
           showToast("Session expired. Logging out...", "error");
           setTimeout(() => onLogout?.(), 2000);
+      } else if (error.status === 403) {
+          // Subscription required - redirect to plan tab
+          showToast("Please select a subscription plan first", "error");
+          setActiveTab('plan');
       } else {
           showToast(error.message || "Failed to link Instagram account", "error");
       }
@@ -635,44 +679,61 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       return;
     }
 
-    // 2. Define Razorpay Options
-    // NOTE: In a production app, you should call your backend here to create an Order 
-    // and pass the order_id in the options below.
-    const options = {
-      key: process.env.RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY', // Allow env override for deployment
-      amount: PLANS[newPlan].price * 100, // Amount is in smallest currency unit (e.g., paise/cents)
-      currency: 'USD',
+    // 2. Find matching backend plan
+    const targetPlan = razorpayPlans.find(p => 
+        p.name.toLowerCase().includes(PLANS[newPlan].label.toLowerCase()) && 
+        p.currency === currency
+    );
+
+    let subscriptionId = null;
+    if (targetPlan) {
+        // Create Subscription on Backend
+        subscriptionId = await createSubscription(targetPlan.id);
+        if (!subscriptionId) {
+             showToast('Failed to initialize subscription. Please try again.', 'error');
+             setIsProcessingPayment(false);
+             return;
+        }
+    } else {
+        console.warn("No matching Razorpay plan found for", newPlan, currency);
+        // Fallback or Error? 
+        // For now, let's allow "Test Mode" fallback using legacy One-Time Payment loop if no plan found
+        // But in prod this should probably block.
+    }
+
+    // 3. Define Razorpay Options
+    const options: any = {
+      key: process.env.RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
       name: 'ShieldGram',
       description: `Upgrade to ${PLANS[newPlan].label} Plan`,
-      image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png', // Placeholder logo
+      image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
       handler: function (response: any) {
-        // 3. Success Callback
-        // In production, send response.razorpay_payment_id, response.razorpay_order_id, 
-        // and response.razorpay_signature to your backend for verification.
-        console.log('Payment ID: ', response.razorpay_payment_id);
-        
-        // Simulate backend verification success
+        console.log('Payment Success: ', response);
+        // In production, verify signature on backend:
+        // response.razorpay_payment_id, response.razorpay_subscription_id, response.razorpay_signature
+
         setSettings(prev => ({ ...prev, plan: newPlan }));
         setIsProcessingPayment(false);
         showToast(`Subscription updated to ${PLANS[newPlan].label}!`);
       },
       prefill: {
-        name: "ShieldGram User",
-        email: "user@example.com",
-        contact: "9999999999"
+        name: currentAccount?.name || "ShieldGram User",
+        email: "user@example.com", 
+        contact: ""
       },
-      notes: {
-        address: "ShieldGram Corporate Office"
-      },
-      theme: {
-        color: "#6bb8e6" // brand-600
-      },
+      theme: { color: "#6bb8e6" },
       modal: {
-        ondismiss: function() {
-            setIsProcessingPayment(false);
-        }
+        ondismiss: function() { setIsProcessingPayment(false); }
       }
     };
+
+    if (subscriptionId) {
+        options.subscription_id = subscriptionId;
+    } else {
+        // Fallback to one-time payment (Legacy/Test)
+        options.amount = PLANS[newPlan].price * 100;
+        options.currency = 'USD'; // Default fallback
+    }
 
     // 4. Open Razorpay
     const paymentObject = new (window as any).Razorpay(options);
@@ -808,24 +869,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8">
                <button
-                 onClick={() => setActiveTab('overview')}
+                 onClick={() => settings.plan && setActiveTab('overview')}
+                 disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'overview' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    : !settings.plan 
+                      ? 'border-transparent text-slate-300 cursor-not-allowed'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                  }`}
                >
                   <LayoutDashboard className="w-4 h-4" /> Overview
+                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
                </button>
                <button
-                 onClick={() => setActiveTab('controls')}
+                 onClick={() => settings.plan && setActiveTab('controls')}
+                 disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'controls' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    : !settings.plan 
+                      ? 'border-transparent text-slate-300 cursor-not-allowed'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                  }`}
                >
                   <Sliders className="w-4 h-4" /> Controls
+                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
                </button>
                <button
                  onClick={() => setActiveTab('plan')}
@@ -838,14 +907,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                   <CreditCard className="w-4 h-4" /> Plan & Billing
                </button>
                <button
-                 onClick={() => setActiveTab('security')}
+                 onClick={() => settings.plan && setActiveTab('security')}
+                 disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'security' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    : !settings.plan 
+                      ? 'border-transparent text-slate-300 cursor-not-allowed'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                  }`}
                >
                   <Lock className="w-4 h-4" /> Security
+                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
                </button>
             </div>
          </div>
@@ -878,28 +951,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                  <div className="w-24 h-24 bg-brand-50 dark:bg-brand-900/20 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3 shadow-inner text-brand-600">
                     <ShieldCheck className="w-12 h-12" />
                  </div>
-                 <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Ready to Secure Your Growth?</h2>
-                 <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-                    Link your Instagram account to start automated AI moderation. ShieldGram protects your brand from spam and toxicity 24/7.
-                 </p>
-                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <button 
-                        onClick={() => {
-                            const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
-                            if (authUrl) window.location.href = authUrl;
-                            else showToast("Auth URL not configured", "error");
-                        }}
-                        className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
-                    >
-                         <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Connect Instagram
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('plan')}
-                        className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                    >
-                         Manage Plan
-                    </button>
-                 </div>
+                 
+                 {!settings.plan ? (
+                   // NO SUBSCRIPTION - Prompt to select plan first
+                   <>
+                     <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Choose a Plan First</h2>
+                     <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                        To start protecting your Instagram account, please select a subscription plan. Our plans include a 30-day money-back guarantee.
+                     </p>
+                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <button 
+                            onClick={() => setActiveTab('plan')}
+                            className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
+                        >
+                             <Zap className="w-5 h-5" /> View Plans
+                        </button>
+                     </div>
+                   </>
+                 ) : (
+                   // HAS SUBSCRIPTION - Show Connect Instagram
+                   <>
+                     <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Ready to Secure Your Growth?</h2>
+                     <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                        Link your Instagram account to start automated AI moderation. ShieldGram protects your brand from spam and toxicity 24/7.
+                     </p>
+                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <button 
+                            onClick={() => {
+                                const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
+                                if (authUrl) window.location.href = authUrl;
+                                else showToast("Auth URL not configured", "error");
+                            }}
+                            className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
+                        >
+                             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Connect Instagram
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('plan')}
+                            className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                        >
+                             Manage Plan
+                        </button>
+                     </div>
+                   </>
+                 )}
+                 
                  <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-8 opacity-60">
                     <div className="flex items-center gap-3 justify-center">
                         <Zap className="w-5 h-5 text-brand-500" /> <span className="text-sm font-medium">Real-time AI</span>
@@ -1540,43 +1636,68 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Plan & Billing</h1>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-                        {/* Current Subscription Card */}
-                        <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Current Subscription</h2>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <h3 className="text-xl font-bold text-slate-900 dark:text-white capitalize">{settings.plan} Plan</h3>
-                                        <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-bold uppercase rounded-full border border-green-200 dark:border-green-800">Active</span>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+                        {settings.plan ? (
+                            <>
+                                {/* Active Plan Card */}
+                                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden relative">
+                                    <div className="absolute top-0 right-0 p-4">
+                                        <div className="bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Active</div>
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                        Renews on <span className="font-medium text-slate-700 dark:text-slate-300">Nov 12, 2024</span>
-                                    </p>
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Current Plan</p>
+                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">{PLANS[settings.plan as PlanType]?.label}</h2>
+                                            <p className="text-sm text-slate-500">
+                                                Renews on <span className="font-medium text-slate-700 dark:text-slate-300">Jan 12, 2026</span>
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                                                {currency === 'INR' ? '₹' : '$'}{PLANS[settings.plan as PlanType]?.price}
+                                                <span className="text-sm font-normal text-slate-500">/mo</span>
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">${PLANS[settings.plan].price}<span className="text-sm font-normal text-slate-500">/mo</span></p>
-                                </div>
-                            </div>
-                        </div>
 
-                        {/* Payment Method Card */}
-                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Method</h2>
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="w-12 h-8 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center border border-slate-200 dark:border-slate-700">
-                                    {/* Mock Visa Icon */}
-                                    <div className="font-bold text-blue-600 italic text-xs">VISA</div>
+                                {/* Payment Method Card (Simplified Mock) */}
+                                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Method</h2>
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="w-12 h-8 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                            <div className="font-bold text-blue-600 italic text-xs">VISA</div>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-900 dark:text-white">Visa ending in 4242</p>
+                                            <p className="text-xs text-slate-500">Expires 12/2028</p>
+                                        </div>
+                                    </div>
+                                    <button className="w-full py-2 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                        Update Payment Method
+                                    </button>
                                 </div>
-                                <div>
-                                    <p className="text-sm font-medium text-slate-900 dark:text-white">Visa ending in 4242</p>
-                                    <p className="text-xs text-slate-500">Expires 12/2028</p>
+                            </>
+                        ) : (
+                            <div className="lg:col-span-2 bg-gradient-to-br from-brand-600 to-indigo-700 rounded-2xl shadow-xl p-8 text-white relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <h2 className="text-3xl font-bold mb-4">Welcome to ShieldGram!</h2>
+                                    <p className="text-lg opacity-90 max-w-2xl mb-6">
+                                        To start protecting your Instagram account with AI-powered moderation, please select a protection plan below.
+                                        Our plans include a 30-day money-back guarantee.
+                                    </p>
+                                    <div className="flex items-center gap-4 text-sm font-medium">
+                                        <div className="flex items-center gap-1 bg-white/10 px-3 py-1.5 rounded-full">
+                                            <Shield className="w-4 h-4" /> 24/7 Protection
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-white/10 px-3 py-1.5 rounded-full">
+                                            <Zap className="w-4 h-4" /> Real-time Blocking
+                                        </div>
+                                    </div>
                                 </div>
+                                <Shield className="absolute -bottom-10 -right-10 w-64 h-64 opacity-10 rotate-12" />
                             </div>
-                            <button className="w-full py-2 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                Update Payment Method
-                            </button>
-                        </div>
+                        )}
                     </div>
 
                     {/* Available Plans */}
@@ -1585,7 +1706,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         {(Object.keys(PLANS) as PlanType[]).map((planKey) => {
                             const plan = PLANS[planKey];
                             const isCurrent = settings.plan === planKey;
-                            const isUpgrade = PLANS[planKey].price > PLANS[settings.plan].price;
+                            
+                            // Dynamic Pricing Logic
+                            const currencySymbol = currency === 'INR' ? '₹' : '$';
+                            let displayPrice: string | number = "--"; 
+                            
+                            const dynamicPlan = razorpayPlans.find(p => 
+                                p.name.toLowerCase().includes(plan.label.toLowerCase()) && 
+                                p.currency === currency
+                            );
+
+                            if (dynamicPlan) {
+                                displayPrice = dynamicPlan.amount / 100;
+                            }
+                            // If no dynamicPlan found, displayPrice remains "--"
+                            
+                            const currentPlanData = razorpayPlans.find(p => 
+                                p.name.toLowerCase().includes(PLANS[settings.plan]?.label?.toLowerCase() || '') && 
+                                p.currency === currency
+                            );
+                            const currentPlanPrice = currentPlanData?.amount || 0;
+
+                            // Can only determine upgrade/downgrade if we have real prices
+                            const isUpgrade = typeof displayPrice === 'number' && (displayPrice * 100) > currentPlanPrice;
 
                             return (
                                 <div 
@@ -1606,7 +1749,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
                                     <h3 className="text-lg font-bold text-slate-900 dark:text-white capitalize">{plan.label}</h3>
                                     <div className="mt-2 mb-6">
-                                        <span className="text-3xl font-bold text-slate-900 dark:text-white">${plan.price}</span>
+                                        <span className="text-3xl font-bold text-slate-900 dark:text-white">{currencySymbol}{displayPrice}</span>
                                         <span className="text-slate-500 text-sm">/mo</span>
                                     </div>
 

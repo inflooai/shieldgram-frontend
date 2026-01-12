@@ -3,12 +3,32 @@ import { Check, Users, Shield, Clock } from 'lucide-react';
 
 interface PricingProps {
   onNavigateDashboard: () => void;
+  currency?: 'USD' | 'INR';
+  razorpayPlans?: any[];
 }
 
-const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
+const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD', razorpayPlans = [] }) => {
   
   const handlePlanClick = () => {
       onNavigateDashboard();
+  };
+
+  const currencySymbol = currency === 'INR' ? '₹' : '$';
+  
+  // Static map for landing page display (fallback to "--" if Razorpay unavailable)
+  const getPrice = (label: string, usdPrice: number): string | number => {
+      // Try to find real plan from Razorpay
+      const realPlan = razorpayPlans.find(p => 
+          p.name.toLowerCase().includes(label.toLowerCase()) && 
+          p.currency === currency
+      );
+
+      if (realPlan) {
+          return realPlan.amount / 100;
+      }
+
+      // Razorpay unavailable - show placeholder
+      return "--";
   };
 
   return (
@@ -27,7 +47,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Standard</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For aspiring creators</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$5</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{currencySymbol}{getPrice('Standard', 5)}</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
@@ -54,7 +74,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Plus</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For growing influencers</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$15</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{currencySymbol}{getPrice('Plus', 15)}</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
@@ -84,7 +104,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Pro</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For agencies & brands</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$30</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{currencySymbol}{getPrice('Pro', 30)}</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
@@ -114,7 +134,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard }) => {
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Max</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For large scale needs</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-3xl font-bold text-slate-900 dark:text-white">$75</span>
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{currencySymbol}{getPrice('Max', 75)}</span>
               <span className="text-slate-500 dark:text-slate-400">/mo</span>
             </div>
             <ul className="mt-6 space-y-4 flex-1">
