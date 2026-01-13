@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import logo from '../logo.svg';
-import { Menu, X, LayoutDashboard, Sun, Moon, LogOut } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Menu, X, LayoutDashboard, Sun, Moon } from 'lucide-react';
 
 interface NavbarProps {
   onNavigateDashboard: () => void;
@@ -30,7 +31,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
             className="flex-shrink-0 flex items-center gap-2 cursor-pointer"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
-            <img src={logo} alt="ShieldGram Logo" className="h-[44px] w-auto" />
+            <Image src="/logo.svg" alt="ShieldGram Logo" width={44} height={44} className="h-[44px] w-auto" />
             <span className="font-bold text-xl text-slate-900 dark:text-white tracking-tight">ShieldGram</span>
           </div>
 
@@ -51,13 +52,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
 
             {isLoggedIn ? (
                <div className="flex items-center gap-4">
-                 <button 
-                  onClick={onNavigateDashboard}
+                 <Link 
+                  href="/dashboard"
                   className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
                  >
                    <LayoutDashboard className="w-4 h-4" />
                    Dashboard
-                 </button>
+                 </Link>
                  <button 
                    onClick={onLogout}
                    className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-5 py-2 rounded-full font-medium transition-all text-sm"
@@ -67,18 +68,18 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
                </div>
             ) : (
                 <div className="flex items-center gap-4">
-                  <button 
-                    onClick={onNavigateDashboard}
+                  <Link 
+                    href="/dashboard"
                     className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
                   >
                     Log In
-                  </button>
-                  <button 
-                    onClick={onNavigateDashboard}
+                  </Link>
+                  <Link 
+                    href="/dashboard"
                     className="bg-brand-600 hover:bg-brand-700 dark:bg-brand-600 dark:hover:bg-brand-500 text-white px-5 py-2 rounded-full font-medium transition-all shadow-sm hover:shadow-md"
                   >
                     Get Started
-                  </button>
+                  </Link>
                 </div>
             )}
           </div>
@@ -112,9 +113,9 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
               {isLoggedIn ? (
                  <>
-                   <button onClick={onNavigateDashboard} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">
+                   <Link href="/dashboard" className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">
                       <div className="flex items-center gap-2"><LayoutDashboard className="w-4 h-4" /> Go to Dashboard</div>
-                   </button>
+                   </Link>
                    <button 
                     onClick={onLogout}
                     className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white px-5 py-3 rounded-lg font-medium shadow-sm"
@@ -124,13 +125,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
                  </>
               ) : (
                 <>
-                  <button onClick={onNavigateDashboard} className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">Log In</button>
-                  <button 
-                    onClick={onNavigateDashboard}
-                    className="w-full bg-brand-600 hover:bg-brand-700 text-white px-5 py-3 rounded-lg font-medium shadow-sm"
+                  <Link href="/dashboard" className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">Log In</Link>
+                  <Link 
+                    href="/dashboard"
+                    className="w-full block text-center bg-brand-600 hover:bg-brand-700 text-white px-5 py-3 rounded-lg font-medium shadow-sm"
                   >
                     Get Started
-                  </button>
+                  </Link>
                 </>
               )}
             </div>

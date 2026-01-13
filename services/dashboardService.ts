@@ -4,14 +4,14 @@ import { CognitoUserPool, CognitoUser, CognitoIdToken, CognitoAccessToken, Cogni
 import { getAuthTokens, setAuthTokens, removeAuthToken } from '../utils/auth';
 
 const COGNITO_CONFIG = {
-  UserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID, 
-  ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID
+  UserPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID, 
+  ClientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID
 };
 
-const base = import.meta.env.VITE_DASHBOARD_API_URL || "";
+const base = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || "";
 const DASHBOARD_API_URL = base.endsWith('/') ? base.slice(0, -1) : base;
 
-const pgBase = process.env.LAMBDA_URL || "";
+const pgBase = process.env.LAMBDA_URL || process.env.NEXT_PUBLIC_LAMBDA_URL || "";
 const PLAYGROUND_API_URL = pgBase.endsWith('/') ? pgBase.slice(0, -1) : pgBase;
 
 export interface AccountInfo {

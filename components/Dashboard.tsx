@@ -6,7 +6,8 @@ import {
   AlertCircle, Target, Edit2, Loader2, HelpCircle
 } from 'lucide-react';
 import { ModeratedCommentLog, CommentRiskLevel } from '../types';
-import logo from "../logo.svg";
+// import SEO from './SEO';
+// import logo from "../logo.svg";
 
 import { getAuthTokens, removeAuthToken } from '../utils/auth';
 import { 
@@ -232,11 +233,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
           plan: (plan_type || '') as PlanType
       }));
 
-      // If no plan is selected, force to plan tab
+      // If no plan, force to plan tab
       if (!plan_type) {
-        setActiveTab('plan');
+          setActiveTab('plan');
       }
-
+      
       // Fetch Location & Plans (Dynamic Pricing)
       if (initialLoad) {
         try {
@@ -439,13 +440,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       // Clean up URL even on error
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      if (error.status === 401) {
+      if (error.status === 403) {
+          showToast("Subscription required to link account", "error");
+          setActiveTab('plan');
+      } else if (error.status === 401) {
           showToast("Session expired. Logging out...", "error");
           setTimeout(() => onLogout?.(), 2000);
-      } else if (error.status === 403) {
-          // Subscription required - redirect to plan tab
-          showToast("Please select a subscription plan first", "error");
-          setActiveTab('plan');
+
       } else {
           showToast(error.message || "Failed to link Instagram account", "error");
       }
@@ -610,7 +611,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   };
 
 
-  const handleAction = async (id: string, action: 'SAFE' | 'DELETE' | 'RESTRICT') => {
+  const handleAction = async (id: string, action: 'SAFE' | 'DELETE') => {
     if (!currentAccount) return;
     
     // Find the comment in activity
@@ -619,7 +620,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
     try {
         // Match frontend action to API action_type
-        const actionType = action === 'RESTRICT' ? 'USER' : 'COMMENT';
+        const actionType = 'COMMENT';
 
         await processIntervention(
             currentAccount.id, 
@@ -703,7 +704,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
     // 3. Define Razorpay Options
     const options: any = {
-      key: process.env.RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
       name: 'ShieldGram',
       description: `Upgrade to ${PLANS[newPlan].label} Plan`,
       image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
@@ -744,11 +745,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
+      {/* <SEO title="Dashboard" description="Manage your ShieldGram protection settings and analytics." /> */}
       {/* Standalone Dashboard Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-             <img src={logo} alt="ShieldGram" className="h-[44px] w-auto" />
+             <img src="/logo.svg" alt="ShieldGram" className="h-[44px] w-auto" />
             <span className="font-bold text-lg text-slate-900 dark:text-white tracking-tight hidden sm:inline">ShieldGram <span className="text-slate-400 font-normal ml-1">Dashboard</span></span>
           </div>
 
@@ -817,7 +819,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <div className="border-t border-slate-100 dark:border-slate-800 p-2">
                             <button 
                                 onClick={() => {
-                                   const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
+                                   const authUrl = process.env.NEXT_PUBLIC_INSTAGRAM_AUTH_URL;
                                    if (authUrl) {
                                        window.location.href = authUrl;
                                    } else {
@@ -869,32 +871,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8">
                <button
-                 onClick={() => settings.plan && setActiveTab('overview')}
+                 onClick={() => setActiveTab('overview')}
                  disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'overview' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : !settings.plan 
-                      ? 'border-transparent text-slate-300 cursor-not-allowed'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 }`}
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <LayoutDashboard className="w-4 h-4" /> Overview
-                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
+                  <LayoutDashboard className="w-4 h-4" /> Overview {!settings.plan && <Lock className="w-3 h-3" />}
                </button>
                <button
-                 onClick={() => settings.plan && setActiveTab('controls')}
+                 onClick={() => setActiveTab('controls')}
                  disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'controls' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : !settings.plan 
-                      ? 'border-transparent text-slate-300 cursor-not-allowed'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 }`}
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <Sliders className="w-4 h-4" /> Controls
-                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
+                  <Sliders className="w-4 h-4" /> Controls {!settings.plan && <Lock className="w-3 h-3" />}
                </button>
                <button
                  onClick={() => setActiveTab('plan')}
@@ -907,18 +903,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                   <CreditCard className="w-4 h-4" /> Plan & Billing
                </button>
                <button
-                 onClick={() => settings.plan && setActiveTab('security')}
+                 onClick={() => setActiveTab('security')}
                  disabled={!settings.plan}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'security' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
-                    : !settings.plan 
-                      ? 'border-transparent text-slate-300 cursor-not-allowed'
-                      : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 }`}
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <Lock className="w-4 h-4" /> Security
-                  {!settings.plan && <Lock className="w-3 h-3 ml-1 opacity-50" />}
+                  <Lock className="w-4 h-4" /> Security {!settings.plan && <Lock className="w-3 h-3" />}
                </button>
             </div>
          </div>
@@ -952,48 +945,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                     <ShieldCheck className="w-12 h-12" />
                  </div>
                  
-                 {!settings.plan ? (
-                   // NO SUBSCRIPTION - Prompt to select plan first
-                   <>
-                     <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Choose a Plan First</h2>
-                     <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-                        To start protecting your Instagram account, please select a subscription plan. Our plans include a 30-day money-back guarantee.
-                     </p>
-                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                        <button 
-                            onClick={() => setActiveTab('plan')}
-                            className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
-                        >
-                             <Zap className="w-5 h-5" /> View Plans
-                        </button>
-                     </div>
-                   </>
-                 ) : (
-                   // HAS SUBSCRIPTION - Show Connect Instagram
-                   <>
-                     <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Ready to Secure Your Growth?</h2>
-                     <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-                        Link your Instagram account to start automated AI moderation. ShieldGram protects your brand from spam and toxicity 24/7.
-                     </p>
-                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                 <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4 tracking-tight">Ready to Secure Your Growth?</h2>
+                 <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                    Link your Instagram account to start automated AI moderation. ShieldGram protects your brand from spam and toxicity 24/7.
+                 </p>
+                 {settings.plan ? (
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                         <button 
                             onClick={() => {
-                                const authUrl = import.meta.env.VITE_INSTAGRAM_AUTH_URL;
+                                const authUrl = process.env.NEXT_PUBLIC_INSTAGRAM_AUTH_URL;
                                 if (authUrl) window.location.href = authUrl;
                                 else showToast("Auth URL not configured", "error");
                             }}
                             className="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
                         >
-                             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Connect Instagram
+                            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Connect Instagram
                         </button>
                         <button 
                             onClick={() => setActiveTab('plan')}
                             className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
                         >
-                             Manage Plan
+                            Manage Plan
                         </button>
-                     </div>
-                   </>
+                    </div>
+                 ) : (
+                    <div className="flex flex-col items-center gap-6">
+                        <p className="text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-4 py-2 rounded-full border border-amber-100 dark:border-amber-900/30">
+                            Choose a Plan First
+                        </p>
+                        <button 
+                            onClick={() => setActiveTab('plan')}
+                            className="w-full sm:w-auto px-10 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold shadow-xl shadow-brand-500/20 transition-all flex items-center justify-center gap-2 group"
+                        >
+                            View Subscription Plans <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                        </button>
+                    </div>
                  )}
                  
                  <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-8 opacity-60">
@@ -1028,7 +1014,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         <button
                           onClick={() => {
                               const redirectUri = `${window.location.origin}/dashboard`;
-                              const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID;
+                              const clientId = process.env.NEXT_PUBLIC_INSTAGRAM_CLIENT_ID;
                               const instagramAuthUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages`;
                               window.location.href = instagramAuthUrl;
                           }}
@@ -1178,13 +1164,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 >
                                     <Trash2 className="w-5 h-5" />
                                 </button>
-                                <button 
-                                    onClick={() => handleAction(comment.id, 'RESTRICT')}
-                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                    title="Restrict User"
-                                >
-                                    <Ban className="w-5 h-5" />
-                                </button>
+
                               </div>
                             </div>
                           ))}
@@ -1225,7 +1205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                        <button
                          onClick={() => {
                              const redirectUri = `${window.location.origin}/dashboard`;
-                             const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID;
+                             const clientId = process.env.NEXT_PUBLIC_INSTAGRAM_CLIENT_ID;
                              const instagramAuthUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_messages`;
                              window.location.href = instagramAuthUrl;
                          }}
@@ -1343,6 +1323,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                     </button>
                                 )}
                             </div>
+
 
                             {!canEditCustomPolicy ? (
                                 <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 flex flex-col items-center text-center justify-center">

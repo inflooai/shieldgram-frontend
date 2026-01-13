@@ -28,7 +28,7 @@ export interface DemoComment {
   timestamp: string;
 }
 
-export type PolicyType = 'Profanity' | 'Sexual Content' | 'Hate speech' | 'Self harm' | 'Violence' | 'Negativity' | 'Harassment' | 'Spam';
+export type PolicyType = 'Profanity' | 'Sexual Content' | 'Hate speech' | 'Self harm' | 'Violence' | 'Negativity' | 'Harassment' | 'Spam' | 'General';
 
 export interface DashboardStat {
   label: string;
@@ -44,4 +44,5 @@ export interface ModeratedCommentLog {
   riskLevel: CommentRiskLevel;
   timestamp: string;
   actionTaken: string;
+  commenter_id?: string;
 }

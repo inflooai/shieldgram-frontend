@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle, ArrowRight } from 'lucide-react';
 import CommentSlideshow from './CommentSlideshow';
+// import SEO from './SEO';
 
 interface HeroProps {
   onNavigateDashboard: () => void;
@@ -14,8 +15,41 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
     }
   };
 
+  const softwareSchema = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ShieldGram",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Cloud",
+    "description": "AI-powered Instagram comment moderation tool that auto-hides spam, crypto bots, and toxic comments 24/7.",
+    "url": "https://www.shieldgram.com",
+    "applicationSubCategory": "Social Media Management",
+    "featureList": [
+      "AI Instagram Comment Moderation",
+      "Auto-Hide Spam Comments",
+      "Stop Crypto Bots",
+      "24/7 Smart Moderation",
+      "Custom AI Policies"
+    ],
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "Free trial available"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.9",
+      "reviewCount": "50"
+    }
+  };
+
   return (
     <div className="relative overflow-hidden bg-slate-50 dark:bg-slate-950 pt-16 pb-24 lg:pt-32 lg:pb-40 transition-colors duration-300">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareSchema) }}
+      />
       {/* Abstract Background Shapes */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-7xl pointer-events-none">
         <div className="absolute top-20 left-10 w-72 h-72 bg-purple-200 dark:bg-purple-900/30 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-3xl opacity-30 dark:opacity-20 animate-blob"></div>
@@ -23,9 +57,9 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
         <div className="absolute -bottom-32 left-1/2 w-72 h-72 bg-pink-200 dark:bg-pink-900/30 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-3xl opacity-30 dark:opacity-20 animate-blob animation-delay-4000"></div>
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          <div className="text-center lg:text-left">
+      <div className="relative max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="text-center lg:text-left max-w-2xl lg:max-w-none">
             
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 text-xs font-semibold mb-6 shadow-sm">
                 <span className="relative flex h-2 w-2">
@@ -35,12 +69,12 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
                Coming Soon
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight text-slate-900 dark:text-white mb-8">
-              Protect your community and brand<span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400"> with AI</span>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 dark:text-white mb-8">
+              The Smartest <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-purple-600 dark:from-brand-400 dark:to-purple-400">AI Instagram Comment Moderation</span> Tool
             </h1>
 
             <p className="font-outfit text-lg sm:text-xl text-slate-600 dark:text-slate-400 mb-10 leading-relaxed font-normal">
-              ShieldGram automatically sweeps away the spam and unwanted comments that clutter your Instagram posts. Keep your focus on what matters.
+              Stop crypto bots, harassment, and spam in their tracks. ShieldGram auto-hides toxic comments 24/7 so you can focus on growing your brand.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center mb-16">

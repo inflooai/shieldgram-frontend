@@ -10,6 +10,7 @@ const getCookie = (name: string): string | null => {
 };
 
 export const setAuthTokens = (tokens: { accessToken: string; idToken: string; refreshToken?: string }) => {
+  if (typeof window === 'undefined') return;
   const hostname = window.location.hostname;
   const isLocalhost = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.includes('127.0.0.1');
   
@@ -46,6 +47,7 @@ export const setAuthToken = (token: string) => {
 };
 
 export const removeAuthToken = () => {
+  if (typeof window === 'undefined') return;
   const hostname = window.location.hostname;
   const isLocalhost = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.includes('127.0.0.1');
 
