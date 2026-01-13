@@ -41,7 +41,7 @@ const Footer: React.FC = () => {
         </div>
         
         <div className="border-t border-slate-800 mt-12 pt-8 text-center text-sm text-slate-500">
-          © {new Date().getFullYear()} ShieldGram Inc. All rights reserved.
+          © {new Date().getFullYear()} ShieldGram. A product of LightRunner Labs.
         </div>
       </div>
 

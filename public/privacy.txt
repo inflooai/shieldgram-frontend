@@ -2,14 +2,15 @@ SHIELDGRAM PRIVACY POLICY
 Effective Date: January 9, 2026
 Last Updated: January 9, 2026
 
-This Privacy Policy explains how ShieldGram (“ShieldGram”, “we”, “us”, “our”) operated by LightRunner Labs collects, uses, discloses, and protects information when you visit https://shieldgram.com (the “Site”) or use the ShieldGram service (the “Service”).
+This Privacy Policy explains how ShieldGram (“ShieldGram”, “we”, “us”, “our”) collects, uses, discloses, and protects information when you visit https://shieldgram.com (the “Site”) or use the ShieldGram service (the “Service”). ShieldGram is a product/service provided by LightRunner Labs, a sole proprietorship firm having its registered office at 2/GA22, Vigyan Nagar Main Road, Kota, Rajasthan, Pin 324005.
 
 If you have questions or requests about privacy, contact: support@shieldgram.com
 
 
 1) WHO WE ARE
 Service Name: ShieldGram
-Operator: LightRunner Labs
+Operator: LightRunner Labs, a sole proprietorship firm.
+Registered Office: 2/GA22, Vigyan Nagar Main Road, Kota, Rajasthan, Pin 324005
 Country of operation: India
 Website: https://shieldgram.com
 Support email: support@shieldgram.com

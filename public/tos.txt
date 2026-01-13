@@ -2,7 +2,7 @@ SHIELDGRAM TERMS OF SERVICE
 Effective Date: January 9, 2026
 Last Updated: January 9, 2026
 
-These Terms of Service (“Terms”) govern your access to and use of ShieldGram (the “Service”) and the website https://shieldgram.com (the “Site”), operated by LightRunner Labs (“ShieldGram”, “we”, “us”, “our”). By creating an account, starting a trial, purchasing a subscription, or otherwise using the Service, you agree to these Terms.
+These Terms of Service (“Terms”) govern your access to and use of ShieldGram (the “Service”) and the website https://shieldgram.com (the “Site”). ShieldGram is a product/service provided by LightRunner Labs, a sole proprietorship firm having its registered office at 2/GA22, Vigyan Nagar Main Road, Kota, Rajasthan, Pin 324005 (“ShieldGram”, “we”, “us”, “our”). By creating an account, starting a trial, purchasing a subscription, or otherwise using the Service, you agree to these Terms.
 
 
 1) ELIGIBILITY
