@@ -39,7 +39,7 @@ You represent and warrant that:
 5) TRIALS, SUBSCRIPTIONS, BILLING, AND AUTO-RENEWAL
 
 5.1 Free trial
-ShieldGram offers a 1-month free trial (unless otherwise stated at sign-up). Trial availability may be limited to one per customer/account.
+ShieldGram offers a 7-day free trial (unless otherwise stated at sign-up). Trial availability may be limited to one per customer/account.
 
 5.2 Monthly subscription and auto-renewal
 Subscriptions are billed on a monthly basis and renew automatically each month until you cancel.

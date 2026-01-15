@@ -36,6 +36,7 @@ export interface AccountInfo {
 export interface DashboardData {
   accounts: AccountInfo[];
   plan_type: string;
+  created_at?: number;
 }
 
 /**
@@ -234,7 +235,8 @@ export const getDashboardInfo = async (): Promise<DashboardData> => {
     const data = await response.json();
     return {
       accounts: data.accounts || [],
-      plan_type: data.plan_type || 'standard'
+      plan_type: data.plan_type || 'standard',
+      created_at: data.created_at
     };
   } catch (error) {
     console.error("Error fetching dashboard info:", error);
@@ -511,4 +513,24 @@ export const createSubscription = async (plan_id: string): Promise<string | null
     console.error("Error creating subscription:", error);
     return null;
   }
+};
+
+export const startFreeTrial = async (planType: 'standard' | 'pro'): Promise<string> => {
+  const idToken = await getValidToken();
+  const response = await fetch(`${DASHBOARD_API_URL}/start-free-trial`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ plan_type: planType })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const apiError = new Error(data.error || `API error: ${response.status}`) as any;
+    apiError.status = response.status;
+    throw apiError;
+  }
+  return data.plan_type;
 };

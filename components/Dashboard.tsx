@@ -25,7 +25,8 @@ import {
   disableMFA,
   getMFAStatus,
   getPlans,
-  createSubscription
+  createSubscription,
+  startFreeTrial
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -36,7 +37,7 @@ interface DashboardProps {
 
 
 type Tab = 'overview' | 'controls' | 'plan' | 'security';
-type PlanType = 'standard' | 'plus' | 'pro' | 'max' | '';
+type PlanType = 'standard' | 'plus' | 'pro' | 'max' | 'trial_standard' | 'trial_pro' | '';
 
 interface DashboardStats {
   scanned: number;
@@ -133,6 +134,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
   const [razorpayPlans, setRazorpayPlans] = useState<any[]>([]);
 
+  // Trial Modal State
+  const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
+  const [selectedTrialPlan, setSelectedTrialPlan] = useState<'standard' | 'pro' | null>(null);
+  const [isStartingTrial, setIsStartingTrial] = useState(false);
+  const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+
+
 
   // Data States
   const [stats, setStats] = useState<DashboardStats>({ scanned: 0, moderated: 0, averageResponseTime: 0 });
@@ -226,6 +234,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     try {
       const dashboardData = await getDashboardInfo();
       const { accounts: accountData, plan_type } = dashboardData;
+      
+      // Check for trial expiry
+      if (plan_type && plan_type.startsWith('trial_')) {
+        const createdAt = (dashboardData as any).created_at;
+        if (createdAt) {
+          const trialEndTime = createdAt + (7 * 24 * 60 * 60); // 7 days in seconds
+          const now = Math.floor(Date.now() / 1000);
+          const daysLeft = Math.ceil((trialEndTime - now) / (24 * 60 * 60));
+          
+          if (daysLeft <= 0) {
+            // Trial expired
+            showToast("Your free trial has ended. Please choose a plan to continue.", "error");
+            setSettings(prev => ({ ...prev, plan: '' }));
+            setTrialDaysRemaining(null);
+            setActiveTab('plan');
+            setIsLoading(false);
+            return;
+          } else {
+            setTrialDaysRemaining(daysLeft);
+          }
+        }
+      } else {
+        setTrialDaysRemaining(null);
+      }
       
       // Always update plan even if no accounts
       setSettings(prev => ({
@@ -741,7 +773,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     paymentObject.open();
   };
 
-  const canEditCustomPolicy = settings.plan === 'pro' || settings.plan === 'max';
+  const handleStartTrialClick = (planType: 'standard' | 'pro') => {
+    setSelectedTrialPlan(planType);
+    setIsTrialModalOpen(true);
+  };
+
+  const handleConfirmTrial = async (withPayment: boolean) => {
+    if (!selectedTrialPlan) return;
+    
+    if (withPayment) {
+      // User wants to subscribe directly
+      setIsTrialModalOpen(false);
+      handleChangePlan(selectedTrialPlan as PlanType);
+    } else {
+      // Start free trial without credit card
+      setIsStartingTrial(true);
+      try {
+        await startFreeTrial(selectedTrialPlan);
+        showToast(`Your 7-day free trial has started!`);
+        setIsTrialModalOpen(false);
+        await loadData(true); // Reload to get updated plan
+      } catch (error: any) {
+        showToast(error.message || "Failed to start trial", "error");
+      } finally {
+        setIsStartingTrial(false);
+      }
+    }
+  };
+
+  const canEditCustomPolicy = settings.plan === 'pro' || settings.plan === 'max' || settings.plan === 'trial_pro';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 flex flex-col">
@@ -1743,19 +1803,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                         ))}
                                     </ul>
 
-                                    <button
-                                        onClick={() => handleChangePlan(planKey)}
-                                        disabled={isCurrent || isProcessingPayment}
-                                        className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm ${
-                                            isCurrent 
-                                            ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 cursor-default'
-                                            : isUpgrade
-                                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 shadow-sm'
-                                                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                        }`}
-                                    >
-                                        {isCurrent ? 'Current Plan' : isUpgrade ? 'Upgrade' : 'Downgrade'}
-                                    </button>
+                                    {/* Show Start Free Trial for standard/pro when no plan */}
+                                    {!settings.plan && (planKey === 'standard' || planKey === 'pro') ? (
+                                        <button
+                                            onClick={() => handleStartTrialClick(planKey as 'standard' | 'pro')}
+                                            disabled={isStartingTrial}
+                                            className="w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+                                        >
+                                            Start Free Trial
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleChangePlan(planKey)}
+                                            disabled={isCurrent || isProcessingPayment}
+                                            className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm ${
+                                                isCurrent 
+                                                ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 cursor-default'
+                                                : isUpgrade
+                                                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 shadow-sm'
+                                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                            }`}
+                                        >
+                                            {isCurrent ? 'Current Plan' : isUpgrade ? 'Upgrade' : 'Downgrade'}
+                                        </button>
+                                    )}
                                 </div>
                             );
                         })}
@@ -1987,6 +2058,71 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                   className="w-full py-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trial Selection Modal */}
+      {isTrialModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Start with {selectedTrialPlan === 'pro' ? 'Pro' : 'Standard'}
+                </h3>
+                <button 
+                  onClick={() => setIsTrialModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <AlertCircle className="w-5 h-5 rotate-45" />
+                </button>
+              </div>
+
+              <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">
+                How would you like to get started?
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => handleConfirmTrial(false)}
+                  disabled={isStartingTrial}
+                  className="w-full p-4 rounded-xl border-2 border-brand-200 dark:border-brand-800 hover:border-brand-400 dark:hover:border-brand-600 bg-brand-50 dark:bg-brand-900/20 transition-all text-left group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">
+                        {isStartingTrial ? 'Starting Trial...' : '7-Day Free Trial'}
+                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">No credit card required</p>
+                    </div>
+                    <div className="w-10 h-10 bg-brand-100 dark:bg-brand-800 rounded-full flex items-center justify-center group-hover:bg-brand-200 dark:group-hover:bg-brand-700 transition-colors">
+                      {isStartingTrial ? (
+                        <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
+                      ) : (
+                        <Zap className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+                      )}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleConfirmTrial(true)}
+                  disabled={isStartingTrial}
+                  className="w-full p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 transition-all text-left group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">Subscribe Now</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Start with full access immediately</p>
+                    </div>
+                    <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors">
+                      <CreditCard className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                    </div>
+                  </div>
                 </button>
               </div>
             </div>

@@ -37,7 +37,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD'
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl mb-4">Simple, transparent pricing</h2>
           <p className="text-lg text-slate-600 dark:text-slate-400">
-            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">1-month free trial</span>. No credit card required.
+            Start with a <span className="font-semibold text-brand-600 dark:text-brand-400">7-day free trial</span>. No credit card required.
           </p>
         </div>
 
@@ -99,7 +99,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD'
           {/* Pro Plan */}
           <div className="rounded-2xl border-2 border-brand-600 dark:border-brand-500 p-6 shadow-xl relative bg-white dark:bg-slate-900 flex flex-col">
              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-600 dark:bg-brand-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-               Most Popular
+               Recommended
              </div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Pro</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">For agencies & brands</p>

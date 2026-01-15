@@ -240,7 +240,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const getSubtitle = () => {
       switch(authMode) {
           case 'signin': return 'Sign in to access your dashboard';
-          case 'signup': return 'Start your 1-month free trial';
+          case 'signup': return 'Start your 7-day free trial';
           case 'verify': return 'Enter the code sent to your email';
           case 'totp': return 'Enter the 6-digit code from your authenticator app';
       }
