@@ -18,7 +18,7 @@ const COGNITO_CONFIG = {
   UserPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID, 
   ClientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID
 };
-type AuthMode = 'signin' | 'signup' | 'verify' | 'totp';
+type AuthMode = 'signin' | 'signup' | 'verify' | 'totp' | 'new_password';
 
 const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
@@ -29,6 +29,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [cognitoUserRef, setCognitoUserRef] = useState<any>(null);
+  const [newPassword, setNewPassword] = useState('');
 
   // Check if we are running in mock mode (if env vars are missing or placeholders)
   const isMockMode = !COGNITO_CONFIG.UserPoolId || COGNITO_CONFIG.UserPoolId.includes('xxx');
@@ -180,7 +181,38 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
       },
       newPasswordRequired: (userAttributes: any, requiredAttributes: any) => {
         setIsLoading(false);
-        setError("New password required (Challenge not implemented in boilerplate)");
+        setCognitoUserRef(cognitoUser);
+        setAuthMode('new_password');
+      }
+    });
+  };
+
+  const handleNewPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    if (!cognitoUserRef) {
+      setError("Authentication session lost. Please try signing in again.");
+      setAuthMode('signin');
+      setIsLoading(false);
+      return;
+    }
+
+    cognitoUserRef.completeNewPasswordChallenge(newPassword, {}, {
+      onSuccess: (result: any) => {
+        setIsLoading(false);
+        setAuthTokens({
+          accessToken: result.getAccessToken().getJwtToken(),
+          idToken: result.getIdToken().getJwtToken(),
+          refreshToken: result.getRefreshToken().getToken()
+        });
+        onLoginSuccess();
+      },
+      onFailure: (err: any) => {
+        setIsLoading(false);
+        console.error(err);
+        setError(err.message || 'Failed to set new password');
       }
     });
   };
@@ -234,6 +266,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
           case 'signup': return 'Create an account';
           case 'verify': return 'Verify email';
           case 'totp': return 'Security Check';
+          case 'new_password': return 'Set New Password';
       }
   };
 
@@ -243,6 +276,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
           case 'signup': return 'Start your 7-day free trial';
           case 'verify': return 'Enter the code sent to your email';
           case 'totp': return 'Enter the 6-digit code from your authenticator app';
+          case 'new_password': return 'Please choose a new password for your account';
       }
   };
 
@@ -277,10 +311,11 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
             authMode === 'signin' ? handleLogin : 
             authMode === 'signup' ? handleSignup : 
             authMode === 'verify' ? handleVerify : 
-            handleTOTPSubmit
+            authMode === 'totp' ? handleTOTPSubmit :
+            handleNewPasswordSubmit
         } className="space-y-4">
           
-          {authMode !== 'verify' && authMode !== 'totp' && (
+          {authMode !== 'verify' && authMode !== 'totp' && authMode !== 'new_password' && (
              <>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
@@ -309,6 +344,21 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
                     )}
                 </div>
              </>
+          )}
+
+          {authMode === 'new_password' && (
+              <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">New Password</label>
+                  <input 
+                    type="password" 
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-brand-500 outline-none transition-all dark:text-white"
+                    placeholder="••••••••"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Choose a strong password at least 8 characters long.</p>
+              </div>
           )}
 
           {(authMode === 'verify' || authMode === 'totp') && (
@@ -347,7 +397,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
                 authMode === 'signin' ? 'Sign In' : 
                 authMode === 'signup' ? 'Create Account' : 
                 authMode === 'verify' ? 'Verify Account' :
-                'Verify & Login'
+                authMode === 'totp' ? 'Verify & Login' :
+                'Update Password'
             }
             {!isLoading && <ArrowRight className="w-4 h-4" />}
           </button>
@@ -372,7 +423,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
               onClick={() => {
                   setError(null);
                   setSuccessMessage(null);
-                  if (authMode === 'verify' || authMode === 'totp') {
+                  if (authMode === 'verify' || authMode === 'totp' || authMode === 'new_password') {
                       setAuthMode('signin');
                   } else {
                       setAuthMode(authMode === 'signin' ? 'signup' : 'signin');

@@ -36,6 +36,8 @@ export interface AccountInfo {
 export interface DashboardData {
   accounts: AccountInfo[];
   plan_type: string;
+  status: string;
+  subscription_details: any;
   created_at?: number;
 }
 
@@ -236,6 +238,8 @@ export const getDashboardInfo = async (): Promise<DashboardData> => {
     return {
       accounts: data.accounts || [],
       plan_type: data.plan_type || 'standard',
+      status: data.status || '',
+      subscription_details: data.subscription_details || null,
       created_at: data.created_at
     };
   } catch (error) {
@@ -454,7 +458,7 @@ export const processIntervention = async (
   }
 };
 
-export const getPlans = async (): Promise<any[]> => {
+export const getPlans = async (currency: 'INR' | 'USD' = 'INR'): Promise<any[]> => {
   let idToken = null;
   try {
      idToken = await getValidToken();
@@ -470,7 +474,7 @@ export const getPlans = async (): Promise<any[]> => {
       headers['Authorization'] = `Bearer ${idToken}`;
     }
 
-    const response = await fetch(`${PLAYGROUND_API_URL}/plans`, {
+    const response = await fetch(`${PLAYGROUND_API_URL}/plans?currency=${currency}`, {
       method: 'GET',
       headers: headers,
     });
@@ -533,4 +537,89 @@ export const startFreeTrial = async (planType: 'standard' | 'pro'): Promise<stri
     throw apiError;
   }
   return data.plan_type;
+};
+
+export const updateSubscription = async (plan_id: string): Promise<any> => {
+  const idToken = await getValidToken();
+  const response = await fetch(`${DASHBOARD_API_URL}/update-subscription`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ plan_id })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const apiError = new Error(data.error || `API error: ${response.status}`) as any;
+    apiError.status = response.status;
+    throw apiError;
+  }
+  return data;
+};
+
+export const cancelSubscription = async (): Promise<any> => {
+  const idToken = await getValidToken();
+  const response = await fetch(`${DASHBOARD_API_URL}/cancel-subscription`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    }
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const apiError = new Error(data.error || `API error: ${response.status}`) as any;
+    apiError.status = response.status;
+    throw apiError;
+  }
+  return data;
+};
+
+export const getPaymentMethod = async (): Promise<any> => {
+  const idToken = await getValidToken();
+  try {
+    const response = await fetch(`${DASHBOARD_API_URL}/payment-method`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      const errorData = await response.json().catch(() => ({}));
+      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      apiError.status = response.status;
+      throw apiError;
+    }
+
+    const data = await response.json();
+    return data.payment_method || null;
+  } catch (error) {
+    console.error("Error fetching payment method:", error);
+    throw error;
+  }
+};
+
+export const sendInvoice = async (email: string, year: number, month: number): Promise<void> => {
+  const idToken = await getValidToken();
+  const response = await fetch(`${DASHBOARD_API_URL}/send-invoice`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, year, month })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const apiError = new Error(data.error || `API error: ${response.status}`) as any;
+    apiError.status = response.status;
+    throw apiError;
+  }
 };

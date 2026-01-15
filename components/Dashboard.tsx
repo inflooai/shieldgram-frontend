@@ -26,7 +26,11 @@ import {
   getMFAStatus,
   getPlans,
   createSubscription,
-  startFreeTrial
+  startFreeTrial,
+  updateSubscription,
+  cancelSubscription,
+  getPaymentMethod,
+  sendInvoice
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -61,6 +65,20 @@ interface UserSettings {
   confidenceThreshold: number;
   selectedCustomPolicies: string[];
   customPolicyDescriptions: Record<string, string>; // policy_name -> description
+}
+
+interface PaymentMethod {
+  method: 'card' | 'upi' | 'netbanking' | 'wallet' | 'unknown';
+  card?: {
+    brand: string;
+    last4: string;
+    expiry_month: number;
+    expiry_year: number;
+    name: string;
+  };
+  vpa?: string;
+  bank?: string;
+  wallet?: string;
 }
 
 interface Account {
@@ -133,6 +151,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
   const [razorpayPlans, setRazorpayPlans] = useState<any[]>([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>('');
+  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [isPaymentMethodLoaded, setIsPaymentMethodLoaded] = useState(false);
+  const [isLoadingPaymentMethod, setIsLoadingPaymentMethod] = useState(false);
 
   // Trial Modal State
   const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
@@ -140,6 +163,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [isStartingTrial, setIsStartingTrial] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
 
+  // Invoice Request State
+  const [invoiceEmail, setInvoiceEmail] = useState('');
+  const [invoiceMonth, setInvoiceMonth] = useState<{year: number, month: number}>({year: new Date().getFullYear(), month: new Date().getMonth() + 1});
+  const [isSendingInvoice, setIsSendingInvoice] = useState(false);
 
 
   // Data States
@@ -233,8 +260,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     setIsLoading(true);
     try {
       const dashboardData = await getDashboardInfo();
-      const { accounts: accountData, plan_type } = dashboardData;
+      const { accounts: accountData, plan_type, status, subscription_details } = dashboardData;
       
+      setSubscriptionStatus(status || '');
+      setSubscriptionDetails(subscription_details || null);
+
       // Check for trial expiry
       if (plan_type && plan_type.startsWith('trial_')) {
         const createdAt = (dashboardData as any).created_at;
@@ -274,24 +304,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       if (initialLoad) {
         try {
             // 1. Detect Country with Fallback
+            let detectedCurrency: 'INR' | 'USD' = 'USD';
             try {
                 const res = await fetch('https://ipapi.co/json/');
                 if (res.status === 429) throw new Error('429');
                 const data = await res.json();
-                setCurrency(data.country_code === 'IN' ? 'INR' : 'USD');
+                detectedCurrency = data.country_code === 'IN' ? 'INR' : 'USD';
             } catch (e) {
                 try {
                     const res = await fetch('http://ip-api.com/json/');
                     const data = await res.json();
-                    setCurrency(data.countryCode === 'IN' ? 'INR' : 'USD');
+                    detectedCurrency = data.countryCode === 'IN' ? 'INR' : 'USD';
                 } catch (e2) {
                     console.warn("Location detection failed, defaulting to USD");
-                    setCurrency('USD');
+                    detectedCurrency = 'USD';
                 }
             }
+            setCurrency(detectedCurrency);
 
-            // 2. Fetch Plans from Backend
-            const plans = await getPlans();
+            // 2. Fetch Plans from Backend (with currency for caching)
+            const plans = await getPlans(detectedCurrency);
             setRazorpayPlans(plans);
         } catch (e) {
             console.error("Failed to load dynamic pricing:", e);
@@ -698,6 +730,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     loadData(false, account.id); // Re-fetch data for new account
   };
 
+  const handleCancelSubscription = async () => {
+    if (!subscriptionDetails?.subscription_id) {
+        showToast("No active subscription found", "error");
+        return;
+    }
+
+    if (!window.confirm("Are you sure you want to cancel your subscription? You will retain access until the end of your current billing cycle.")) {
+        return;
+    }
+
+    setIsProcessingPayment(true);
+    try {
+        await cancelSubscription();
+        showToast("Subscription cancellation scheduled", "success");
+        await loadData(); // Refresh to show cancelled status
+    } catch (error: any) {
+        showToast(error.message || "Failed to cancel subscription", "error");
+    } finally {
+        setIsProcessingPayment(false);
+    }
+  };
+
   const handleChangePlan = async (newPlan: PlanType) => {
     if (newPlan === settings.plan) return;
     
@@ -718,36 +772,68 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         p.currency === currency
     );
 
-    let subscriptionId = null;
-    if (targetPlan) {
-        // Create Subscription on Backend
-        subscriptionId = await createSubscription(targetPlan.id);
-        if (!subscriptionId) {
-             showToast('Failed to initialize subscription. Please try again.', 'error');
-             setIsProcessingPayment(false);
-             return;
-        }
-    } else {
-        console.warn("No matching Razorpay plan found for", newPlan, currency);
-        // Fallback or Error? 
-        // For now, let's allow "Test Mode" fallback using legacy One-Time Payment loop if no plan found
-        // But in prod this should probably block.
+    if (!targetPlan) {
+        showToast(`Plan ${newPlan} not found for currency ${currency}`, "error");
+        setIsProcessingPayment(false);
+        return;
     }
 
-    // 3. Define Razorpay Options
+    // 3. Check if we should update or create
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled_grace') {
+        try {
+            await updateSubscription(targetPlan.id);
+            showToast(`Subscription update to ${PLANS[newPlan].label} initiated!`);
+            await loadData();
+        } catch (error: any) {
+            showToast(error.message || "Failed to update subscription", "error");
+        } finally {
+            setIsProcessingPayment(false);
+        }
+        return;
+    }
+
+    // 4. Create New Subscription
+    let subscriptionId = null;
+    try {
+        subscriptionId = await createSubscription(targetPlan.id);
+    } catch (e: any) {
+        showToast(e.message || 'Failed to initialize subscription.', 'error');
+        setIsProcessingPayment(false);
+        return;
+    }
+
+    if (!subscriptionId) {
+         showToast('Failed to initialize subscription. Please try again.', 'error');
+         setIsProcessingPayment(false);
+         return;
+    }
+    
+    // Helper to open Razorpay
+    const openRazorpay = (options: any) => {
+        const rzp1 = new (window as any).Razorpay(options);
+        rzp1.on('payment.failed', function (response: any){
+            showToast(response.error.description || 'Payment Failed', 'error');
+            setIsProcessingPayment(false);
+        });
+        rzp1.open();
+    }
+
+    // 5. Define Razorpay Options
     const options: any = {
       key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
       name: 'ShieldGram',
       description: `Upgrade to ${PLANS[newPlan].label} Plan`,
       image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
-      handler: function (response: any) {
+      handler: async function (response: any) {
         console.log('Payment Success: ', response);
-        // In production, verify signature on backend:
-        // response.razorpay_payment_id, response.razorpay_subscription_id, response.razorpay_signature
-
-        setSettings(prev => ({ ...prev, plan: newPlan }));
-        setIsProcessingPayment(false);
-        showToast(`Subscription updated to ${PLANS[newPlan].label}!`);
+        // Show success loading
+        setIsProcessingPayment(true);
+        // Wait a bit for webhook to process (ideally poll or websocket)
+        setTimeout(async () => {
+            await loadData();
+            setIsProcessingPayment(false);
+            showToast(`Subscription updated to ${PLANS[newPlan].label}!`);
+        }, 2000);
       },
       prefill: {
         name: currentAccount?.name || "ShieldGram User",
@@ -762,15 +848,69 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
     if (subscriptionId) {
         options.subscription_id = subscriptionId;
-    } else {
-        // Fallback to one-time payment (Legacy/Test)
-        options.amount = PLANS[newPlan].price * 100;
-        options.currency = 'USD'; // Default fallback
     }
 
-    // 4. Open Razorpay
+    // 6. Open Razorpay
     const paymentObject = new (window as any).Razorpay(options);
     paymentObject.open();
+  };
+
+  const handleFetchPaymentMethod = async () => {
+    setIsLoadingPaymentMethod(true);
+    try {
+        const pm = await getPaymentMethod();
+        setPaymentMethod(pm);
+        setIsPaymentMethodLoaded(true);
+    } catch (error) {
+        // If 404, we just show empty state or "No saved method"
+        setIsPaymentMethodLoaded(true); 
+        setPaymentMethod(null);
+    } finally {
+        setIsLoadingPaymentMethod(false);
+    }
+  };
+
+  const handleUpdatePaymentMethod = async () => {
+    if (!subscriptionDetails?.subscription_id) {
+        showToast('Please subscribe to a plan first to add a payment method', 'error');
+        return;
+    }
+    
+    setIsProcessingPayment(true);
+    const res = await loadRazorpayScript();
+    if (!res) {
+        showToast('Razorpay SDK failed to load', 'error');
+        setIsProcessingPayment(false);
+        return;
+    }
+    
+    const options: any = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
+        name: 'ShieldGram',
+        description: 'Update Payment Method',
+        image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
+        subscription_id: subscriptionDetails.subscription_id,
+        handler: async function (response: any) {
+            console.log('Update Success: ', response);
+            showToast('Payment method updated!');
+            setIsProcessingPayment(true);
+            // Re-fetch payment details after a delay
+            setTimeout(async () => {
+                await handleFetchPaymentMethod();
+                setIsProcessingPayment(false);
+            }, 5000); // 5s delay for Razorpay sync
+        },
+        prefill: {
+            email: '',
+        }
+    };
+    
+    const rzp1 = new (window as any).Razorpay(options);
+    rzp1.on('payment.failed', function (response: any){
+        showToast(response.error.description || 'Update Failed', 'error');
+        setIsProcessingPayment(false);
+    });
+    rzp1.open();
   };
 
   const handleStartTrialClick = (planType: 'standard' | 'pro') => {
@@ -1114,7 +1254,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Comments Scanned</p>
-                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.scanned.toLocaleString()}</h3>
+                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{Math.max(0, stats.scanned).toLocaleString()}</h3>
+
                           <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
                             <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Scanned</span>
                           </p>
@@ -1129,7 +1270,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Threats Blocked</p>
-                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.moderated.toLocaleString()}</h3>
+                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{Math.max(0, stats.moderated).toLocaleString()}</h3>
+
                           <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
                             <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Moderated</span>
                           </p>
@@ -1683,40 +1825,101 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 {/* Active Plan Card */}
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden relative">
                                     <div className="absolute top-0 right-0 p-4">
-                                        <div className="bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Active</div>
+                                        {subscriptionStatus === 'active' && <div className="bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Active</div>}
+                                        {subscriptionStatus === 'cancelled_grace' && <div className="bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Cancelling</div>}
+                                        {subscriptionStatus === 'pending' && <div className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Pending Payment</div>}
                                     </div>
                                     <div className="flex items-start justify-between">
-                                        <div>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Current Plan</p>
-                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">{PLANS[settings.plan as PlanType]?.label}</h2>
-                                            <p className="text-sm text-slate-500">
-                                                Renews on <span className="font-medium text-slate-700 dark:text-slate-300">Jan 12, 2026</span>
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                                                {currency === 'INR' ? '₹' : '$'}{PLANS[settings.plan as PlanType]?.price}
-                                                <span className="text-sm font-normal text-slate-500">/mo</span>
-                                            </p>
+                                        <div className="flex-1">
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Current Plan {subscriptionStatus === 'cancelled_grace' && "(Ends soon)"}</p>
+                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{PLANS[settings.plan as PlanType]?.label}</h2>
+                                            
+                                            {subscriptionStatus === 'cancelled_grace' ? (
+                                                <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
+                                                    Access through <span className="font-medium underline">{subscriptionDetails?.grace_period_ends ? new Date(subscriptionDetails.grace_period_ends * 1000).toLocaleDateString() : 'end of cycle'}</span>
+                                                </p>
+                                            ) : (
+                                                <p className="text-sm text-slate-500 mb-4">
+                                                    Renews on <span className="font-medium text-slate-700 dark:text-slate-300">{subscriptionDetails?.renew_date || 'next cycle'}</span>
+                                                </p>
+                                            )}
+
+                                            {subscriptionStatus === 'active' && (
+                                                <button 
+                                                    onClick={handleCancelSubscription}
+                                                    className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium flex items-center gap-1 transition-colors"
+                                                >
+                                                    <Ban className="w-3 h-3" /> Cancel Subscription
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Payment Method Card (Simplified Mock) */}
+                                {/* Payment Method Card */}
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
                                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Method</h2>
-                                    <div className="flex items-center gap-4 mb-6">
-                                        <div className="w-12 h-8 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center border border-slate-200 dark:border-slate-700">
-                                            <div className="font-bold text-blue-600 italic text-xs">VISA</div>
+                                    
+                                    {!isPaymentMethodLoaded ? (
+                                        <div className="flex flex-col items-center justify-center py-4">
+                                            <p className="text-sm text-slate-500 mb-4">Securely fetch your saved payment details.</p>
+                                            <button 
+                                                onClick={handleFetchPaymentMethod}
+                                                disabled={isLoadingPaymentMethod}
+                                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                            >
+                                                {isLoadingPaymentMethod ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                                                Fetch Payment Method
+                                            </button>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-slate-900 dark:text-white">Visa ending in 4242</p>
-                                            <p className="text-xs text-slate-500">Expires 12/2028</p>
+                                    ) : paymentMethod ? (
+                                        <>
+                                            <div className="flex items-center gap-4 mb-6">
+                                                <div className="w-12 h-8 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                                    {paymentMethod.method === 'card' && <div className="font-bold text-slate-600 dark:text-slate-400 text-[10px] uppercase">{paymentMethod.card?.brand || 'CARD'}</div>}
+                                                    {paymentMethod.method === 'upi' && <div className="font-bold text-brand-600 text-[10px]">UPI</div>}
+                                                    {paymentMethod.method === 'netbanking' && <div className="font-bold text-slate-600 text-[10px]">BANK</div>}
+                                                    {paymentMethod.method === 'wallet' && <div className="font-bold text-slate-600 text-[10px]">WALLET</div>}
+                                                    {paymentMethod.method === 'unknown' && <CreditCard className="w-4 h-4 text-slate-400" />}
+                                                </div>
+                                                <div>
+                                                    {paymentMethod.method === 'card' && (
+                                                        <>
+                                                            <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">{paymentMethod.card?.brand} ending in {paymentMethod.card?.last4}</p>
+                                                            <p className="text-xs text-slate-500">Expires {paymentMethod.card?.expiry_month}/{paymentMethod.card?.expiry_year}</p>
+                                                        </>
+                                                    )}
+                                                    {paymentMethod.method === 'upi' && (
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">{paymentMethod.vpa || 'UPI ID'}</p>
+                                                    )}
+                                                    {paymentMethod.method === 'netbanking' && (
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">{paymentMethod.bank || 'Netbanking'}</p>
+                                                    )}
+                                                     {paymentMethod.method === 'wallet' && (
+                                                        <p className="text-sm font-medium text-slate-900 dark:text-white">{paymentMethod.wallet || 'Wallet'}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={handleUpdatePaymentMethod}
+                                                    className="flex-1 py-2 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                                >
+                                                    Update Payment Method
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-4">
+                                            <p className="text-sm text-slate-500 mb-4">No payment method saved.</p>
+                                             <button 
+                                                onClick={handleUpdatePaymentMethod}
+                                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
+                                            >
+                                                Add Payment Method
+                                            </button>
                                         </div>
-                                    </div>
-                                    <button className="w-full py-2 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                        Update Payment Method
-                                    </button>
+                                    )}
                                 </div>
                             </>
                         ) : (
@@ -1832,52 +2035,60 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                         })}
                     </div>
 
-                    {/* Billing History */}
-                    <div className="mt-12 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Billing History</h2>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
-                                    <tr>
-                                        <th className="px-6 py-4 font-medium">Date</th>
-                                        <th className="px-6 py-4 font-medium">Amount</th>
-                                        <th className="px-6 py-4 font-medium">Status</th>
-                                        <th className="px-6 py-4 font-medium text-right">Invoice</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="px-6 py-4 text-slate-900 dark:text-slate-300">Oct 12, 2024</td>
-                                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400">$5.00</td>
-                                        <td className="px-6 py-4">
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-                                                Paid
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 justify-end ml-auto">
-                                                <Download className="w-4 h-4" /> PDF
-                                            </button>
-                                        </td>
-                                    </tr>
-                                     <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="px-6 py-4 text-slate-900 dark:text-slate-300">Sep 12, 2024</td>
-                                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400">$5.00</td>
-                                        <td className="px-6 py-4">
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-                                                Paid
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 justify-end ml-auto">
-                                                <Download className="w-4 h-4" /> PDF
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                    {/* Get Invoice Section */}
+                    <div className="mt-12 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Request Invoice</h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                            Enter your email and select a month to receive your invoice.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <input
+                                type="email"
+                                placeholder="Email address"
+                                value={invoiceEmail}
+                                onChange={(e) => setInvoiceEmail(e.target.value)}
+                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                            />
+                            <select
+                                value={`${invoiceMonth.year}-${invoiceMonth.month}`}
+                                onChange={(e) => {
+                                    const [year, month] = e.target.value.split('-').map(Number);
+                                    setInvoiceMonth({year, month});
+                                }}
+                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                            >
+                                {Array.from({length: 12}, (_, i) => {
+                                    const d = new Date();
+                                    d.setMonth(d.getMonth() - i);
+                                    return (
+                                        <option key={i} value={`${d.getFullYear()}-${d.getMonth() + 1}`}>
+                                            {d.toLocaleString('default', {month: 'long', year: 'numeric'})}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                            <button
+                                onClick={async () => {
+                                    if (!invoiceEmail) {
+                                        showToast('Please enter an email address', 'error');
+                                        return;
+                                    }
+                                    setIsSendingInvoice(true);
+                                    try {
+                                        await sendInvoice(invoiceEmail, invoiceMonth.year, invoiceMonth.month);
+                                        showToast('Invoice request sent! Check your email.', 'success');
+                                    } catch (err: any) {
+                                        showToast(err.message || 'Failed to send invoice', 'error');
+                                    } finally {
+                                        setIsSendingInvoice(false);
+                                    }
+                                }}
+                                disabled={isSendingInvoice}
+                                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isSendingInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                Send Invoice
+                            </button>
                         </div>
                     </div>
                   </div>
