@@ -65,25 +65,27 @@ export default function LandingPage() {
   useEffect(() => {
     const loadLandingData = async () => {
         // 1. Detect Location
+        let detected: 'USD' | 'INR' = 'USD';
         try {
             const res = await fetch('https://ipapi.co/json/');
             if (res.status === 429) throw new Error('429');
             const data = await res.json();
-            setPublicCurrency(data.country_code === 'IN' ? 'INR' : 'USD');
+            detected = data.country_code === 'IN' ? 'INR' : 'USD';
         } catch (e) {
             try {
                 const res = await fetch('http://ip-api.com/json/');
                 const data = await res.json();
-                setPublicCurrency(data.countryCode === 'IN' ? 'INR' : 'USD');
+                detected = data.countryCode === 'IN' ? 'INR' : 'USD';
             } catch (e2) {
                 console.error("Location detection failed, defaulting to USD");
-                setPublicCurrency('USD');
+                detected = 'USD';
             }
         }
+        setPublicCurrency(detected);
 
         // 2. Fetch Plans
         try {
-            const plans = await getPlans();
+            const plans = await getPlans(detected); // Use detected value directly
             setRazorpayPlans(plans);
         } catch (err) {
             console.error("Error fetching plans:", err);

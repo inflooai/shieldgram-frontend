@@ -27,10 +27,10 @@ import {
   getPlans,
   createSubscription,
   startFreeTrial,
-  updateSubscription,
   cancelSubscription,
   getPaymentMethod,
-  sendInvoice
+  sendInvoice,
+  getSubscriptionAuthUrl
 } from '../services/dashboardService';
 
 interface DashboardProps {
@@ -119,9 +119,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') as Tab;
-    return (['overview', 'controls', 'plan', 'security'] as Tab[]).includes(tab) ? tab : 'overview';
+    // Default to 'plan' if no tab specified - we'll redirect appropriately after loadData
+    return (['overview', 'controls', 'plan', 'security'] as Tab[]).includes(tab) ? tab : 'plan';
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start loading until API returns
   const [isLoadingInterventions, setIsLoadingInterventions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
@@ -158,10 +159,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [isLoadingPaymentMethod, setIsLoadingPaymentMethod] = useState(false);
 
   // Trial Modal State
+  const [isUPIUpdateModalOpen, setIsUPIUpdateModalOpen] = useState(false);
   const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
   const [selectedTrialPlan, setSelectedTrialPlan] = useState<'standard' | 'pro' | null>(null);
   const [isStartingTrial, setIsStartingTrial] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+
+  // New state for Plan Lock Modal
+  const [isPlanLockModalOpen, setIsPlanLockModalOpen] = useState(false);
+  const [isConfirmPlanChangeModalOpen, setIsConfirmPlanChangeModalOpen] = useState(false);
+  const [planToChangeTo, setPlanToChangeTo] = useState<PlanType | null>(null);
 
   // Invoice Request State
   const [invoiceEmail, setInvoiceEmail] = useState('');
@@ -197,6 +204,50 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     return JSON.stringify(settings) !== JSON.stringify(originalSettings);
   }, [settings, originalSettings]);
 
+  const hasPageAccess = React.useMemo(() => {
+    if (isLoading) return true; // Keep access true during initial load to prevent flickering
+    if (!settings.plan) return false;
+    
+    const now = Math.floor(Date.now() / 1000);
+    const expiry = subscriptionDetails?.next_billing_date || subscriptionDetails?.current_end || subscriptionDetails?.access_ends;
+
+    // Status-based immediate locks
+    const lockedStatuses = [
+      'pending', 
+      'halted', 
+      'paused', 
+      'payment_failed',
+      'authenticated',
+      'cancelled', 
+      'cancelled_expired', 
+      'trial_expired', 
+      'invalid',
+      'no_subscription'
+    ];
+    
+    if (lockedStatuses.includes(subscriptionStatus)) {
+        // Double check if cancelled/pending has a future expiry we can respect
+        // BUT 'pending' or 'authenticated' payment should always lock down the dashboard.
+        if (subscriptionStatus === 'pending' || subscriptionStatus === 'authenticated') return false;
+
+        if (['cancelled', 'pending_cancellation', 'cancelled_grace'].includes(subscriptionStatus)) {
+            if (expiry && now <= expiry) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Time-based check for anything that might have an expiry
+    if (expiry && now > expiry) {
+        if (!['active', 'legacy', 'trial_active'].includes(subscriptionStatus)) {
+            return false;
+        }
+    }
+
+    return true;
+  }, [isLoading, settings.plan, subscriptionStatus, subscriptionDetails]);
+
   const handleCancelChanges = () => {
     if (originalSettings) {
         setSettings(originalSettings);
@@ -214,6 +265,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   // Account Removal State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
+
+  // Cancel Subscription Modal State
+  const [isCancelSubscriptionModalOpen, setIsCancelSubscriptionModalOpen] = useState(false);
 
   // URL Sync
   useEffect(() => {
@@ -265,6 +319,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       setSubscriptionStatus(status || '');
       setSubscriptionDetails(subscription_details || null);
 
+      // Sync currency with subscription if active
+      if (subscription_details?.currency) {
+          setCurrency(subscription_details.currency);
+      }
+
       // Check for trial expiry
       if (plan_type && plan_type.startsWith('trial_')) {
         const createdAt = (dashboardData as any).created_at;
@@ -298,6 +357,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       // If no plan, force to plan tab
       if (!plan_type) {
           setActiveTab('plan');
+      } else if (initialLoad) {
+          // If user has a plan and this is initial load, redirect to overview unless they explicitly requested a tab
+          const params = new URLSearchParams(window.location.search);
+          const requestedTab = params.get('tab');
+          if (!requestedTab) {
+              setActiveTab('overview');
+          }
       }
       
       // Fetch Location & Plans (Dynamic Pricing)
@@ -360,7 +426,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         const pList = selected.policies.split(',').map(s => s.trim());
 
         const newSettings: UserSettings = {
-            plan: (plan_type || 'standard') as PlanType,
+            plan: (plan_type || '') as PlanType,
             policies: {
                 profanity: pList.includes('profanity'),
                 sexualContent: pList.includes('sexualContent'),
@@ -478,6 +544,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         // but loadData is already called with true above
     }
   }, []);
+
+  // Force "Plan & Billing" tab when access is locked
+  useEffect(() => {
+    if (!hasPageAccess && activeTab !== 'plan') {
+      setActiveTab('plan');
+    }
+  }, [hasPageAccess, activeTab]);
 
   const checkMFA = async () => {
     try {
@@ -730,20 +803,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     loadData(false, account.id); // Re-fetch data for new account
   };
 
-  const handleCancelSubscription = async () => {
+  const handleCancelSubscriptionClick = () => {
     if (!subscriptionDetails?.subscription_id) {
         showToast("No active subscription found", "error");
         return;
     }
+    setIsCancelSubscriptionModalOpen(true);
+  };
 
-    if (!window.confirm("Are you sure you want to cancel your subscription? You will retain access until the end of your current billing cycle.")) {
-        return;
-    }
-
+  const handleConfirmCancelSubscription = async () => {
+    setIsCancelSubscriptionModalOpen(false);
     setIsProcessingPayment(true);
     try {
-        await cancelSubscription();
-        showToast("Subscription cancellation scheduled", "success");
+        const response = await cancelSubscription(false); // Default to True in service, but we can pass False for immediate in future if service supports it
+        showToast(response.message || "Subscription cancellation scheduled", "success");
         await loadData(); // Refresh to show cancelled status
     } catch (error: any) {
         showToast(error.message || "Failed to cancel subscription", "error");
@@ -752,8 +825,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     }
   };
 
+  const handleCancelPendingSubscription = async () => {
+    setIsProcessingPayment(true);
+    try {
+        // We call cancelSubscription with immediate: true
+        const response = await cancelSubscription(true); 
+        showToast(response.message || "Subscription cancelled", "success");
+        await loadData();
+    } catch (error: any) {
+        showToast(error.message || "Failed to cancel subscription", "error");
+    } finally {
+        setIsProcessingPayment(false);
+    }
+  };
+
   const handleChangePlan = async (newPlan: PlanType) => {
-    if (newPlan === settings.plan) return;
+    if (newPlan === settings.plan && (subscriptionStatus === 'active' || subscriptionStatus === 'pending')) return;
+
+    // Check if we need to show a confirmation modal for cancelled users
+    if (subscriptionStatus === 'cancelled' && !isConfirmPlanChangeModalOpen) {
+        setPlanToChangeTo(newPlan);
+        setIsConfirmPlanChangeModalOpen(true);
+        return;
+    }
     
     setIsProcessingPayment(true);
     
@@ -778,17 +872,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         return;
     }
 
-    // 3. Check if we should update or create
-    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled_grace') {
-        try {
-            await updateSubscription(targetPlan.id);
-            showToast(`Subscription update to ${PLANS[newPlan].label} initiated!`);
-            await loadData();
-        } catch (error: any) {
-            showToast(error.message || "Failed to update subscription", "error");
-        } finally {
-            setIsProcessingPayment(false);
-        }
+    // 3. Prevent direct upgrade/update - Force cancel + resubscribe flow
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'pending' || subscriptionStatus === 'pending_cancellation') {
+        setIsPlanLockModalOpen(true);
+        setIsProcessingPayment(false);
         return;
     }
 
@@ -820,7 +907,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
     // 5. Define Razorpay Options
     const options: any = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_LIVE_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
       name: 'ShieldGram',
       description: `Upgrade to ${PLANS[newPlan].label} Plan`,
       image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
@@ -837,12 +924,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       },
       prefill: {
         name: currentAccount?.name || "ShieldGram User",
-        email: "user@example.com", 
+        email: "", // Let Razorpay handle or use real email if available
         contact: ""
       },
       theme: { color: "#6bb8e6" },
       modal: {
-        ondismiss: function() { setIsProcessingPayment(false); }
+        ondismiss: function() { 
+            setIsProcessingPayment(false); 
+        }
       }
     };
 
@@ -851,8 +940,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     }
 
     // 6. Open Razorpay
-    const paymentObject = new (window as any).Razorpay(options);
-    paymentObject.open();
+    try {
+        const paymentObject = new (window as any).Razorpay(options);
+        paymentObject.on('payment.failed', function (response: any){
+            showToast(response.error.description || 'Payment Failed', 'error');
+            setIsProcessingPayment(false);
+        });
+        paymentObject.open();
+    } catch (error: any) {
+        console.error("Razorpay Error:", error);
+        showToast("Failed to open payment gateway. Please check your browser settings.", "error");
+        setIsProcessingPayment(false);
+    }
   };
 
   const handleFetchPaymentMethod = async () => {
@@ -870,47 +969,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     }
   };
 
-  const handleUpdatePaymentMethod = async () => {
+  const handleUpdatePaymentMethod = async (e?: React.MouseEvent) => {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     if (!subscriptionDetails?.subscription_id) {
         showToast('Please subscribe to a plan first to add a payment method', 'error');
         return;
     }
     
-    setIsProcessingPayment(true);
-    const res = await loadRazorpayScript();
-    if (!res) {
-        showToast('Razorpay SDK failed to load', 'error');
-        setIsProcessingPayment(false);
+    // For UPI users: Direct to Option B (Cancel + Resubscribe)
+    if (paymentMethod?.method === 'upi') {
+        setIsUPIUpdateModalOpen(true);
         return;
     }
     
-    const options: any = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_PLACEHOLDER_KEY',
-        name: 'ShieldGram',
-        description: 'Update Payment Method',
-        image: 'https://cdn-icons-png.flaticon.com/512/3233/3233515.png',
-        subscription_id: subscriptionDetails.subscription_id,
-        handler: async function (response: any) {
-            console.log('Update Success: ', response);
-            showToast('Payment method updated!');
-            setIsProcessingPayment(true);
-            // Re-fetch payment details after a delay
-            setTimeout(async () => {
-                await handleFetchPaymentMethod();
-                setIsProcessingPayment(false);
-            }, 5000); // 5s delay for Razorpay sync
-        },
-        prefill: {
-            email: '',
+    // For Card users: Use Auth Link (Option A)
+    setIsProcessingPayment(true);
+    try {
+        const { auth_url } = await getSubscriptionAuthUrl();
+        if (auth_url) {
+            // Inform the user about redirect
+            showToast('Redirecting to Razorpay to update payment method...');
+            
+            // Open in same window to ensure callback works better, or new tab if preferred
+            // Razorpay recommends redirecting back to callback_url
+            window.location.href = auth_url;
+        } else {
+            showToast('Update link not available. Please try again later.', 'error');
         }
-    };
-    
-    const rzp1 = new (window as any).Razorpay(options);
-    rzp1.on('payment.failed', function (response: any){
-        showToast(response.error.description || 'Update Failed', 'error');
+    } catch (error: any) {
+        console.error('Error fetching auth URL:', error);
+        showToast(error.message || 'Failed to get update link', 'error');
+    } finally {
         setIsProcessingPayment(false);
-    });
-    rzp1.open();
+    }
   };
 
   const handleStartTrialClick = (planType: 'standard' | 'pro') => {
@@ -958,8 +1052,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
              {/* Account Switcher */}
               <div className="relative" ref={dropdownRef}>
                 <button
-                    onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                    onClick={() => hasPageAccess && setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+                    disabled={!hasPageAccess}
                     className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-all border border-transparent focus:outline-none ${
+                        !hasPageAccess ? 'opacity-50 cursor-not-allowed' :
                         !currentAccount ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
                     }`}
                 >
@@ -975,7 +1071,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             {currentAccount?.name || (isLoading ? 'Loading...' : 'Select Account')}
                         </p>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-none mt-1.5">
-                            {currentAccount?.handle || (isLoading ? '' : 'None active')}
+                            {!hasPageAccess ? 'Subscription required' : currentAccount?.handle || (isLoading ? '' : 'None active')}
                         </p>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isAccountDropdownOpen ? 'rotate-180' : ''}`} />
@@ -1023,7 +1119,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                    if (authUrl) {
                                        window.location.href = authUrl;
                                    } else {
-                                       showToast("Error: VITE_INSTAGRAM_AUTH_URL is not defined.", "error");
+                                       showToast("Error: NEXT_PUBLIC_INSTAGRAM_AUTH_URL is not defined.", "error");
                                    }
                                    setIsAccountDropdownOpen(false);
                                 }}
@@ -1072,25 +1168,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             <div className="flex space-x-8">
                <button
                  onClick={() => setActiveTab('overview')}
-                 disabled={!settings.plan}
+                 disabled={!hasPageAccess || isLoading}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'overview' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
                     : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
+                 } ${(!hasPageAccess || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <LayoutDashboard className="w-4 h-4" /> Overview {!settings.plan && <Lock className="w-3 h-3" />}
+                  <LayoutDashboard className="w-4 h-4" /> Overview {(!hasPageAccess || isLoading) && <Lock className="w-3 h-3" />}
                </button>
                <button
                  onClick={() => setActiveTab('controls')}
-                 disabled={!settings.plan}
+                 disabled={!hasPageAccess || isLoading}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'controls' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
                     : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
+                 } ${(!hasPageAccess || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <Sliders className="w-4 h-4" /> Controls {!settings.plan && <Lock className="w-3 h-3" />}
+                  <Sliders className="w-4 h-4" /> Controls {(!hasPageAccess || isLoading) && <Lock className="w-3 h-3" />}
                </button>
                <button
                  onClick={() => setActiveTab('plan')}
@@ -1104,14 +1200,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                </button>
                <button
                  onClick={() => setActiveTab('security')}
-                 disabled={!settings.plan}
+                 disabled={!hasPageAccess || isLoading}
                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'security' 
                     ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' 
                     : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                 } ${!settings.plan ? 'opacity-50 cursor-not-allowed' : ''}`}
+                 } ${(!hasPageAccess || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                >
-                  <Lock className="w-4 h-4" /> Security {!settings.plan && <Lock className="w-3 h-3" />}
+                  <Lock className="w-4 h-4" /> Security {(!hasPageAccess || isLoading) && <Lock className="w-3 h-3" />}
                </button>
             </div>
          </div>
@@ -1121,13 +1217,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           {notification && (
-            <div className={`fixed top-24 right-4 sm:right-8 z-50 flex items-center gap-2 text-sm font-medium px-4 py-3 rounded-lg shadow-xl border animate-slide-in max-w-[calc(100vw-2rem)] sm:max-w-md ${
+            <div className={`fixed top-24 right-4 sm:right-8 z-50 flex items-start gap-3 text-sm font-medium px-4 py-3 rounded-lg shadow-xl border animate-slide-in max-w-[calc(100vw-2rem)] sm:max-w-lg ${
                 notification.type === 'success'
                 ? 'text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/90 border-green-200 dark:border-green-800'
                 : 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/90 border-red-200 dark:border-red-800'
             }`}>
-                {notification.type === 'success' ? <CheckCircle className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />} 
-                <span className="truncate">{notification.message}</span>
+                {notification.type === 'success' ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />} 
+                <span className="break-words">{notification.message}</span>
             </div>
           )}
 
@@ -1242,7 +1338,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                              settings.plan === 'pro' ? 'bg-brand-100 text-brand-700 border-brand-200' :
                              'bg-slate-100 text-slate-600 border-slate-200'
                            }`}>
-                             {settings.plan} Plan
+                             {settings.plan ? (PLANS[settings.plan as keyof typeof PLANS]?.label || settings.plan) : 'No'} Plan
                            </span>
                         </span>
                     </div>
@@ -1820,33 +1916,120 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-                        {settings.plan ? (
+                        {hasPageAccess && settings.plan ? (
                             <>
                                 {/* Active Plan Card */}
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden relative">
                                     <div className="absolute top-0 right-0 p-4">
                                         {subscriptionStatus === 'active' && <div className="bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Active</div>}
-                                        {subscriptionStatus === 'cancelled_grace' && <div className="bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Cancelling</div>}
+                                        {subscriptionStatus === 'pending_cancellation' && <div className="bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Cancellation Scheduled</div>}
+                                        {subscriptionStatus === 'cancelled_grace' && <div className="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Cancelled</div>}
                                         {subscriptionStatus === 'pending' && <div className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Pending Payment</div>}
+                                        {subscriptionStatus === 'payment_failed' && <div className="bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Payment Processing</div>}
+                                        {subscriptionStatus === 'authenticated' && <div className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Processing</div>}
                                     </div>
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Current Plan {subscriptionStatus === 'cancelled_grace' && "(Ends soon)"}</p>
-                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{PLANS[settings.plan as PlanType]?.label}</h2>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">
+                                                Current Plan 
+                                                {(subscriptionStatus === 'cancelled_grace' || subscriptionStatus === 'pending_cancellation') && " (Ends soon)"}
+                                            </p>
+                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                                                {hasPageAccess && settings.plan ? PLANS[settings.plan as PlanType]?.label : 'No Active Subscription'}
+                                            </h2>
+
+                                            {subscriptionStatus === 'payment_failed' && (
+                                                <div className="mt-2 mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between animate-pulse">
+                                                    <div className="flex items-center gap-3">
+                                                        <Loader2 className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-spin" />
+                                                        <div>
+                                                            <p className="text-xs font-bold text-amber-900 dark:text-amber-100">Payment Processing</p>
+                                                            <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-tight">We are retrying your payment. Please check your payment method.</p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={(e) => handleUpdatePaymentMethod(e)}
+                                                        className="px-2 py-1 bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-lg hover:bg-slate-50 transition-all border border-amber-200 dark:border-amber-800/50"
+                                                    >
+                                                        Update Method
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {subscriptionStatus === 'authenticated' && (
+                                                <div className="mt-2 mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex items-center justify-between animate-pulse">
+                                                    <div className="flex items-center gap-3">
+                                                        <Loader2 className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                                                        <div>
+                                                            <p className="text-xs font-bold text-blue-900 dark:text-blue-100">Processing Upgrade</p>
+                                                            <p className="text-[10px] text-blue-700 dark:text-blue-300 leading-tight">Your payment is being verified. This may take a moment.</p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={handleCancelSubscriptionClick}
+                                                        className="px-2 py-1 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 text-[10px] font-bold rounded-lg hover:bg-red-50 transition-all border border-red-200 dark:border-red-800/50"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {subscriptionStatus === 'pending' && (
+                                                <div className="mt-2 mb-4 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl flex items-center justify-between animate-pulse">
+                                                    <div className="flex items-center gap-3">
+                                                        <Loader2 className="w-4 h-4 text-brand-600 dark:text-brand-400 animate-spin" />
+                                                        <div>
+                                                            <p className="text-xs font-bold text-brand-900 dark:text-brand-100">Activation in progress</p>
+                                                            <p className="text-[10px] text-brand-700 dark:text-brand-300 leading-tight">Waiting for payment confirmation for {PLANS[settings.plan as PlanType]?.label}.</p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={handleCancelPendingSubscription}
+                                                        disabled={isProcessingPayment}
+                                                        className="px-2 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[10px] font-bold rounded-lg hover:bg-red-100 transition-all border border-red-200 dark:border-red-800/50"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            )}
                                             
-                                            {subscriptionStatus === 'cancelled_grace' ? (
-                                                <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
+                                            {!hasPageAccess ? (
+                                                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-xs font-medium bg-amber-50 dark:bg-amber-900/10 px-3 py-2 rounded-lg mt-4 border border-amber-100 dark:border-amber-900/30">
+                                                    <AlertCircle className="w-4 h-4" />
+                                                    Select a plan below to activate 24/7 protection
+                                                </div>
+                                            ) : subscriptionStatus === 'pending_cancellation' ? (
+                                                <div className="mb-4">
+                                                    <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+                                                        Access through <span className="font-medium underline">
+                                                            {subscriptionDetails?.access_ends 
+                                                                ? new Date(subscriptionDetails.access_ends * 1000).toLocaleDateString() 
+                                                                : subscriptionDetails?.current_end 
+                                                                    ? new Date(subscriptionDetails.current_end * 1000).toLocaleDateString()
+                                                                    : 'end of billing cycle'}
+                                                        </span>
+                                                    </p>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">
+                                                        💡 You can subscribe to a new plan at any time below.
+                                                    </p>
+                                                </div>
+                                            ) : subscriptionStatus === 'cancelled_grace' ? (
+                                                <p className="text-sm text-red-600 dark:text-red-400 mb-4">
                                                     Access through <span className="font-medium underline">{subscriptionDetails?.grace_period_ends ? new Date(subscriptionDetails.grace_period_ends * 1000).toLocaleDateString() : 'end of cycle'}</span>
                                                 </p>
                                             ) : (
                                                 <p className="text-sm text-slate-500 mb-4">
-                                                    Renews on <span className="font-medium text-slate-700 dark:text-slate-300">{subscriptionDetails?.renew_date || 'next cycle'}</span>
+                                                    Renews on <span className="font-medium text-slate-700 dark:text-slate-300">
+                                                        {subscriptionDetails?.next_billing_date 
+                                                            ? new Date(subscriptionDetails.next_billing_date * 1000).toLocaleDateString() 
+                                                            : subscriptionDetails?.renew_date || 'next cycle'}
+                                                    </span>
                                                 </p>
                                             )}
 
                                             {subscriptionStatus === 'active' && (
                                                 <button 
-                                                    onClick={handleCancelSubscription}
+                                                    onClick={handleCancelSubscriptionClick}
                                                     className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium flex items-center gap-1 transition-colors"
                                                 >
                                                     <Ban className="w-3 h-3" /> Cancel Subscription
@@ -1855,7 +2038,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                         </div>
                                     </div>
                                 </div>
-
+                                
                                 {/* Payment Method Card */}
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
                                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Payment Method</h2>
@@ -1884,10 +2067,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                                 </div>
                                                 <div>
                                                     {paymentMethod.method === 'card' && (
-                                                        <>
-                                                            <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">{paymentMethod.card?.brand} ending in {paymentMethod.card?.last4}</p>
-                                                            <p className="text-xs text-slate-500">Expires {paymentMethod.card?.expiry_month}/{paymentMethod.card?.expiry_year}</p>
-                                                        </>
+                                                        paymentMethod.card ? (
+                                                            <>
+                                                                <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
+                                                                    {paymentMethod.card.brand || 'Card'} ending in {paymentMethod.card.last4 || '••••'}
+                                                                </p>
+                                                                <p className="text-xs text-slate-500">
+                                                                    Expires {paymentMethod.card.expiry_month || '--'}/{paymentMethod.card.expiry_year || '--'}
+                                                                </p>
+                                                            </>
+                                                        ) : (
+                                                            <div className="flex flex-col">
+                                                                <p className="text-sm font-medium text-slate-900 dark:text-white">Card</p>
+                                                                <p className="text-xs text-slate-500">Details available after activation</p>
+                                                            </div>
+                                                        )
                                                     )}
                                                     {paymentMethod.method === 'upi' && (
                                                         <p className="text-sm font-medium text-slate-900 dark:text-white">{paymentMethod.vpa || 'UPI ID'}</p>
@@ -1900,9 +2094,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                                     )}
                                                 </div>
                                             </div>
+                                            
+                                            {/* UPI Limitation Warning */}
+                                            {paymentMethod.method === 'upi' && (
+                                                <div className="flex items-start gap-3 p-3 mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                    <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                                                    <div>
+                                                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">UPI Limitation</p>
+                                                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                                                            Plan changes are not supported with UPI. To switch plans, you must cancel your current subscription and resubscribe using a Card. Note: New subscriptions are charged the full amount immediately.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
                                             <div className="flex gap-2">
                                                 <button 
-                                                    onClick={handleUpdatePaymentMethod}
+                                                    type="button"
+                                                    onClick={(e) => handleUpdatePaymentMethod(e)}
                                                     className="flex-1 py-2 text-sm text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                                                 >
                                                     Update Payment Method
@@ -1913,7 +2122,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                         <div className="text-center py-4">
                                             <p className="text-sm text-slate-500 mb-4">No payment method saved.</p>
                                              <button 
-                                                onClick={handleUpdatePaymentMethod}
+                                                type="button"
+                                                onClick={(e) => handleUpdatePaymentMethod(e)}
                                                 className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium transition-colors"
                                             >
                                                 Add Payment Method
@@ -1923,33 +2133,97 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 </div>
                             </>
                         ) : (
-                            <div className="lg:col-span-2 bg-gradient-to-br from-brand-600 to-indigo-700 rounded-2xl shadow-xl p-8 text-white relative overflow-hidden">
-                                <div className="relative z-10">
-                                    <h2 className="text-3xl font-bold mb-4">Welcome to ShieldGram!</h2>
-                                    <p className="text-lg opacity-90 max-w-2xl mb-6">
-                                        To start protecting your Instagram account with AI-powered moderation, please select a protection plan below.
-                                        Our plans include a 30-day money-back guarantee.
-                                    </p>
-                                    <div className="flex items-center gap-4 text-sm font-medium">
-                                        <div className="flex items-center gap-1 bg-white/10 px-3 py-1.5 rounded-full">
-                                            <Shield className="w-4 h-4" /> 24/7 Protection
+                            <>
+                                {/* No Active Plan Card */}
+                                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden relative">
+                                    <div className="absolute top-0 right-0 p-4">
+                                        <div className="bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">
+                                            {['pending', 'authenticated'].includes(subscriptionStatus) ? 'Activation Pending' : 'Inactive'}
                                         </div>
-                                        <div className="flex items-center gap-1 bg-white/10 px-3 py-1.5 rounded-full">
-                                            <Zap className="w-4 h-4" /> Real-time Blocking
+                                    </div>
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Current Plan</p>
+                                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
+                                                {['pending', 'authenticated'].includes(subscriptionStatus) && settings.plan 
+                                                    ? `${PLANS[settings.plan as PlanType]?.label} (Pending)`
+                                                    : 'No Active Subscription'}
+                                            </h2>
+                                            
+                                            <div className="space-y-3">
+                                                {['pending', 'authenticated'].includes(subscriptionStatus) ? (
+                                                    <div className="mt-2 p-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-500/50 rounded-xl flex items-start gap-4">
+                                                        <div className="flex-shrink-0 mt-1">
+                                                            <Loader2 className="w-5 h-5 text-amber-600 dark:text-amber-400 animate-spin" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className="text-sm font-bold text-amber-900 dark:text-amber-100 italic flex items-center gap-2">
+                                                                PAYMENT PENDING
+                                                            </p>
+                                                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">
+                                                                Your payment for the <strong>{PLANS[settings.plan as PlanType]?.label}</strong> plan is being processed by Razorpay. 
+                                                                Access to the dashboard will be unlocked once the payment is confirmed.
+                                                            </p>
+                                                            <div className="mt-3 flex items-center gap-3">
+                                                                <button 
+                                                                    onClick={handleCancelPendingSubscription}
+                                                                    disabled={isProcessingPayment}
+                                                                    className="px-3 py-1.5 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 text-[10px] font-black rounded-lg hover:bg-red-50 transition-all border border-red-200 dark:border-red-800 shadow-sm uppercase tracking-wider"
+                                                                >
+                                                                    {isProcessingPayment ? 'Processing...' : 'Cancel & Pick New Plan'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm font-medium bg-amber-50 dark:bg-amber-900/10 px-3 py-2.5 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                                        <AlertCircle className="w-5 h-5 shrink-0" />
+                                                        <span>ShieldGram protection is currently paused. Pick a plan below to resume AI moderation.</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                                <Shield className="absolute -bottom-10 -right-10 w-64 h-64 opacity-10 rotate-12" />
-                            </div>
+
+                                {/* Welcome Banner Styled as a Card */}
+                                <div className="bg-gradient-to-br from-brand-600 to-indigo-700 rounded-xl shadow-sm p-6 text-white relative overflow-hidden flex flex-col justify-center">
+                                    <div className="relative z-10">
+                                        <h2 className="text-xl font-bold mb-2">Welcome to ShieldGram!</h2>
+                                        <p className="text-sm opacity-90 mb-4">
+                                            Start protecting your account with world-class AI moderation today. 
+                                        </p>
+                                        <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider">
+                                            <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded">
+                                                <Shield className="w-3 h-3" /> 24/7 AI
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded">
+                                                <Zap className="w-3 h-3" /> Instant
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Shield className="absolute -bottom-6 -right-6 w-32 h-32 opacity-10 rotate-12" />
+                                </div>
+                            </>
                         )}
                     </div>
 
                     {/* Available Plans */}
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Available Plans</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {(Object.keys(PLANS) as PlanType[]).map((planKey) => {
-                            const plan = PLANS[planKey];
-                            const isCurrent = settings.plan === planKey;
+                        {(() => {
+                            const PLAN_WEIGHTS: Record<string, number> = { 'standard': 1, 'plus': 2, 'pro': 3, 'max': 4 };
+                            
+                            return (Object.keys(PLANS) as PlanType[]).map((planKey) => {
+                                const plan = PLANS[planKey];
+                                const isSamePlan = settings.plan === planKey;
+                                
+                                // If access is locked, no plan is considered "current" unless it's genuinely the active one
+                                const isCurrent = hasPageAccess && 
+                                                 (subscriptionStatus !== 'cancelled_grace' && subscriptionStatus !== 'pending_cancellation') && 
+                                                 isSamePlan;
+                                
+                                const isPending = !hasPageAccess && subscriptionStatus === 'pending' && isSamePlan;
                             
                             // Dynamic Pricing Logic
                             const currencySymbol = currency === 'INR' ? '₹' : '$';
@@ -1963,16 +2237,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             if (dynamicPlan) {
                                 displayPrice = dynamicPlan.amount / 100;
                             }
-                            // If no dynamicPlan found, displayPrice remains "--"
                             
-                            const currentPlanData = razorpayPlans.find(p => 
-                                p.name.toLowerCase().includes(PLANS[settings.plan]?.label?.toLowerCase() || '') && 
-                                p.currency === currency
-                            );
-                            const currentPlanPrice = currentPlanData?.amount || 0;
-
-                            // Can only determine upgrade/downgrade if we have real prices
-                            const isUpgrade = typeof displayPrice === 'number' && (displayPrice * 100) > currentPlanPrice;
+                                // Plan Weights for robust comparison
+                                // If access is locked, treat currentWeight as 0 to allow selection of ANY plan
+                                const currentWeight = hasPageAccess ? (PLAN_WEIGHTS[settings.plan] || 0) : 0;
+                                const targetWeight = PLAN_WEIGHTS[planKey] || 0;
+                                const isUpgrade = targetWeight > currentWeight;
+                                
+                                // NEW LOGIC: Lock all plan switching if active. Use click-to-notify pattern.
+                                const canReactivate = isSamePlan && (subscriptionStatus === 'pending_cancellation');
+                                const isLocked = hasPageAccess && !isSamePlan && subscriptionStatus !== 'cancelled' && subscriptionStatus !== 'pending_cancellation'; 
 
                             return (
                                 <div 
@@ -2006,38 +2280,65 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                         ))}
                                     </ul>
 
-                                    {/* Show Start Free Trial for standard/pro when no plan */}
-                                    {!settings.plan && (planKey === 'standard' || planKey === 'pro') ? (
-                                        <button
-                                            onClick={() => handleStartTrialClick(planKey as 'standard' | 'pro')}
-                                            disabled={isStartingTrial}
-                                            className="w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
-                                        >
-                                            Start Free Trial
-                                        </button>
+                                    {/* Show Select Plan for users without a plan or cancelled */}
+                                    {!settings.plan || subscriptionStatus === 'cancelled' ? (
+                                        (planKey === 'standard' || planKey === 'pro') ? (
+                                            <button
+                                                onClick={() => handleStartTrialClick(planKey as 'standard' | 'pro')}
+                                                disabled={isStartingTrial || isProcessingPayment}
+                                                className="w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+                                            >
+                                                Select Plan
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleChangePlan(planKey)}
+                                                disabled={isProcessingPayment}
+                                                className="w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+                                            >
+                                                Subscribe Now
+                                            </button>
+                                        )
                                     ) : (
-                                        <button
-                                            onClick={() => handleChangePlan(planKey)}
-                                            disabled={isCurrent || isProcessingPayment}
-                                            className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm ${
-                                                isCurrent 
-                                                ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 cursor-default'
-                                                : isUpgrade
-                                                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 shadow-sm'
-                                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                            }`}
-                                        >
-                                            {isCurrent ? 'Current Plan' : isUpgrade ? 'Upgrade' : 'Downgrade'}
-                                        </button>
+                                        <div className="group relative">
+                                            <button
+                                                onClick={() => {
+                                                    if (canReactivate) {
+                                                        handleChangePlan(planKey);
+                                                    } else if (isLocked) {
+                                                        setIsPlanLockModalOpen(true);
+                                                    } else {
+                                                        handleChangePlan(planKey);
+                                                    }
+                                                }}
+                                                disabled={isCurrent || isPending || isProcessingPayment}
+                                                className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors text-sm ${
+                                                    (isCurrent || isPending)
+                                                    ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 cursor-default'
+                                                    : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 shadow-sm'
+                                                }`}
+                                            >
+                                                {isCurrent 
+                                                    ? 'Current Plan' 
+                                                    : isPending
+                                                        ? 'Activation Pending'
+                                                        : canReactivate 
+                                                            ? 'Reactivate Plan'
+                                                            : 'Select Plan'}
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             );
-                        })}
+                            });
+                        })()}
                     </div>
 
                     {/* Get Invoice Section */}
-                    <div className="mt-12 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Request Invoice</h2>
+                    <div className={`mt-12 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 ${!settings.plan ? 'opacity-50 pointer-events-none select-none' : ''}`}>
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                            Request Invoice {!settings.plan && <Lock className="w-4 h-4 text-slate-400" />}
+                        </h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
                             Enter your email and select a month to receive your invoice.
                         </p>
@@ -2047,7 +2348,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                 placeholder="Email address"
                                 value={invoiceEmail}
                                 onChange={(e) => setInvoiceEmail(e.target.value)}
-                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                                disabled={!settings.plan}
+                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:cursor-not-allowed"
                             />
                             <select
                                 value={`${invoiceMonth.year}-${invoiceMonth.month}`}
@@ -2055,7 +2357,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                     const [year, month] = e.target.value.split('-').map(Number);
                                     setInvoiceMonth({year, month});
                                 }}
-                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                                disabled={!settings.plan}
+                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:cursor-not-allowed"
                             >
                                 {Array.from({length: 12}, (_, i) => {
                                     const d = new Date();
@@ -2075,19 +2378,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                     }
                                     setIsSendingInvoice(true);
                                     try {
-                                        await sendInvoice(invoiceEmail, invoiceMonth.year, invoiceMonth.month);
-                                        showToast('Invoice request sent! Check your email.', 'success');
+                                        const result = await sendInvoice(invoiceEmail, invoiceMonth.year, invoiceMonth.month);
+                                        if (result.is_paid && result.short_url) {
+                                            showToast('Invoice is already paid. Opening direct link...', 'success');
+                                            window.open(result.short_url, '_blank');
+                                        } else {
+                                            showToast('Invoice request sent! Check your email.', 'success');
+                                        }
                                     } catch (err: any) {
                                         showToast(err.message || 'Failed to send invoice', 'error');
                                     } finally {
                                         setIsSendingInvoice(false);
                                     }
                                 }}
-                                disabled={isSendingInvoice}
-                                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                disabled={isSendingInvoice || !settings.plan}
+                                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isSendingInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                                Send Invoice
+                                Request Invoice
                             </button>
                         </div>
                     </div>
@@ -2334,6 +2642,161 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       <CreditCard className="w-5 h-5 text-slate-500 dark:text-slate-400" />
                     </div>
                   </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Plan Lock Modal */}
+      {isPlanLockModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Change Plan</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                To switch to a different plan, you must first cancel your current subscription and create a new one.
+              </p>
+              <button
+                onClick={() => setIsPlanLockModalOpen(false)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold rounded-xl transition-colors"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Subscription Confirmation Modal */}
+      {isCancelSubscriptionModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                <Ban className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Cancel Subscription?</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                Are you sure you want to cancel your subscription? You will retain access until the end of your current billing cycle.
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleConfirmCancelSubscription}
+                  disabled={isProcessingPayment}
+                  className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-500/20 transition-all disabled:opacity-50"
+                >
+                  {isProcessingPayment ? 'Cancelling...' : 'Yes, Cancel Subscription'}
+                </button>
+                <button 
+                  onClick={() => setIsCancelSubscriptionModalOpen(false)}
+                  disabled={isProcessingPayment}
+                  className="w-full py-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                >
+                  Keep Subscription
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Confirm Plan Change Modal (for Cancelled users) */}
+      {isConfirmPlanChangeModalOpen && planToChangeTo && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-6">
+                 <div className="w-16 h-16 bg-brand-50 dark:bg-brand-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-brand-600">
+                    <RefreshCw className="w-8 h-8" />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 text-center">Confirm Plan Selection</h3>
+                 
+                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl mb-6">
+                    {planToChangeTo === settings.plan ? (
+                       <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                          You are resuming your current <span className="font-bold text-slate-900 dark:text-white uppercase">{settings.plan}</span> plan. 
+                          Your new subscription will start after the current one expires, and you'll be charged on the next due date.
+                       </p>
+                    ) : (
+                       <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                          You are switching to the <span className="font-bold text-slate-900 dark:text-white uppercase">{planToChangeTo}</span> plan. 
+                          This new plan will start <strong>immediately</strong>, making your current plan access void.
+                       </p>
+                    )}
+                 </div>
+
+                 <div className="flex flex-col gap-3">
+                    <button 
+                       onClick={() => {
+                          setIsConfirmPlanChangeModalOpen(false);
+                          const plan = planToChangeTo;
+                          setPlanToChangeTo(null);
+                          handleChangePlan(plan);
+                       }}
+                       className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 transition-all"
+                    >
+                       Confirm & Proceed
+                    </button>
+                    <button 
+                       onClick={() => {
+                          setIsConfirmPlanChangeModalOpen(false);
+                          setPlanToChangeTo(null);
+                       }}
+                       className="w-full py-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                    >
+                       Cancel
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+      {isUPIUpdateModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="w-8 h-8" />
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Switch to Card Payment</h3>
+              </div>
+
+              <div className="space-y-4 text-slate-600 dark:text-slate-400 text-sm mb-8">
+                <p>
+                  Razorpay doesn't support changing the payment method for active UPI subscriptions.
+                </p>
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-2">
+                  <p className="font-semibold text-slate-900 dark:text-slate-200">To switch to Card payment, you'll need to:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Cancel your current subscription (keep access until the billing cycle ends)</li>
+                    <li>Resubscribe using a Card</li>
+                  </ol>
+                </div>
+                <p className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 p-3 rounded-lg border border-amber-100 dark:border-amber-800/30 text-xs">
+                  <span className="font-bold uppercase mr-1">Note:</span> 
+                  As this will be a NEW subscription, you will be charged the total value of the new plan immediately upon resubscription.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsUPIUpdateModalOpen(false)}
+                  className="flex-1 px-4 py-3 rounded-xl font-bold text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  Go Back
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsUPIUpdateModalOpen(false);
+                    handleConfirmCancelSubscription();
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-brand-500/20 shadow-lg transition-all"
+                >
+                  Cancel & Resubscribe
                 </button>
               </div>
             </div>

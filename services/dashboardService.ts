@@ -14,6 +14,43 @@ const DASHBOARD_API_URL = base.endsWith('/') ? base.slice(0, -1) : base;
 const pgBase = process.env.LAMBDA_URL || process.env.NEXT_PUBLIC_LAMBDA_URL || "";
 const PLAYGROUND_API_URL = pgBase.endsWith('/') ? pgBase.slice(0, -1) : pgBase;
 
+// Dedicated payments Lambda API
+const paymentsBase = process.env.NEXT_PUBLIC_PAYMENTS_API_URL || DASHBOARD_API_URL;
+const PAYMENTS_API_URL = paymentsBase.endsWith('/') ? paymentsBase.slice(0, -1) : paymentsBase;
+
+/**
+ * Handle 401 unauthorized responses by logging out the user.
+ * Clears tokens and redirects to signin page.
+ */
+const handleUnauthorized = () => {
+  console.warn("Received 401 Unauthorized - logging out user");
+  removeAuthToken();
+  
+  // Redirect to signin page
+  if (typeof window !== 'undefined') {
+    window.location.href = '/?mode=signin';
+  }
+};
+
+/**
+ * Centralized fetch wrapper that handles 401 errors automatically.
+ * Use this for all authenticated API calls.
+ */
+const authenticatedFetch = async (
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> => {
+  const response = await fetch(url, options);
+  
+  if (response.status === 401) {
+    handleUnauthorized();
+    // Throw to prevent further processing
+    throw new Error("Session expired. Please sign in again.");
+  }
+  
+  return response;
+};
+
 export interface AccountInfo {
   account_id: string;
   account_name: string;
@@ -74,6 +111,12 @@ export const getValidToken = async (): Promise<string> => {
 
   if (session.isValid()) {
     return accessToken;
+  }
+
+  // If this is a social login session without a refresh token, we can't refresh it
+  if (refreshToken === 'social_login_no_refresh') {
+    removeAuthToken();
+    throw new Error("Social session expired. Please sign in again.");
   }
 
   // Session expired, attempt refresh
@@ -220,7 +263,7 @@ export const getDashboardInfo = async (): Promise<DashboardData> => {
   const idToken = await getValidToken();
 
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/dashboard-info`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/dashboard-info`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -237,7 +280,7 @@ export const getDashboardInfo = async (): Promise<DashboardData> => {
     const data = await response.json();
     return {
       accounts: data.accounts || [],
-      plan_type: data.plan_type || 'standard',
+      plan_type: data.plan_type || '',
       status: data.status || '',
       subscription_details: data.subscription_details || null,
       created_at: data.created_at
@@ -258,7 +301,7 @@ export const saveDashboardControls = async (
 ): Promise<void> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/save-controls`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/save-controls`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -289,7 +332,7 @@ export const saveDashboardControls = async (
 export const addInstagramAccount = async (code: string): Promise<any> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/add-account`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/add-account`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -315,7 +358,7 @@ export const addInstagramAccount = async (code: string): Promise<any> => {
 export const getInterventions = async (account_id: string, limit: number = 10): Promise<any[]> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/interventions?account_id=${account_id}&limit=${limit}`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/interventions?account_id=${account_id}&limit=${limit}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -344,7 +387,7 @@ export const saveCustomPolicy = async (
 ): Promise<void> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/save-custom-policy`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/save-custom-policy`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -375,7 +418,7 @@ export const deleteCustomPolicy = async (
 ): Promise<void> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/delete-custom-policy`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/delete-custom-policy`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -402,7 +445,7 @@ export const deleteCustomPolicy = async (
 export const removeInstagramAccount = async (account_id: string): Promise<void> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/dashboard-info?account_id=${account_id}`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/dashboard-info?account_id=${account_id}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -431,7 +474,7 @@ export const processIntervention = async (
 ): Promise<void> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/intervene`, {
+    const response = await authenticatedFetch(`${DASHBOARD_API_URL}/intervene`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -474,7 +517,7 @@ export const getPlans = async (currency: 'INR' | 'USD' = 'INR'): Promise<any[]> 
       headers['Authorization'] = `Bearer ${idToken}`;
     }
 
-    const response = await fetch(`${PLAYGROUND_API_URL}/plans?currency=${currency}`, {
+    const response = await fetch(`${PAYMENTS_API_URL}/plans?currency=${currency}`, {
       method: 'GET',
       headers: headers,
     });
@@ -497,7 +540,7 @@ export const getPlans = async (currency: 'INR' | 'USD' = 'INR'): Promise<any[]> 
 export const createSubscription = async (plan_id: string): Promise<string | null> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/create-subscription`, {
+    const response = await authenticatedFetch(`${PAYMENTS_API_URL}/create-subscription`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -519,9 +562,9 @@ export const createSubscription = async (plan_id: string): Promise<string | null
   }
 };
 
-export const startFreeTrial = async (planType: 'standard' | 'pro'): Promise<string> => {
+export const startFreeTrial = async (planType: string): Promise<string> => {
   const idToken = await getValidToken();
-  const response = await fetch(`${DASHBOARD_API_URL}/start-free-trial`, {
+  const response = await authenticatedFetch(`${PAYMENTS_API_URL}/start-free-trial`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${idToken}`,
@@ -541,7 +584,7 @@ export const startFreeTrial = async (planType: 'standard' | 'pro'): Promise<stri
 
 export const updateSubscription = async (plan_id: string): Promise<any> => {
   const idToken = await getValidToken();
-  const response = await fetch(`${DASHBOARD_API_URL}/update-subscription`, {
+  const response = await authenticatedFetch(`${PAYMENTS_API_URL}/update-subscription`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${idToken}`,
@@ -554,19 +597,21 @@ export const updateSubscription = async (plan_id: string): Promise<any> => {
   if (!response.ok) {
     const apiError = new Error(data.error || `API error: ${response.status}`) as any;
     apiError.status = response.status;
+    apiError.details = data.details || '';
     throw apiError;
   }
   return data;
 };
 
-export const cancelSubscription = async (): Promise<any> => {
+export const cancelSubscription = async (immediate: boolean = false): Promise<any> => {
   const idToken = await getValidToken();
-  const response = await fetch(`${DASHBOARD_API_URL}/cancel-subscription`, {
+  const response = await authenticatedFetch(`${PAYMENTS_API_URL}/cancel-subscription`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${idToken}`,
       'Content-Type': 'application/json',
-    }
+    },
+    body: JSON.stringify({ immediate })
   });
 
   const data = await response.json();
@@ -581,7 +626,7 @@ export const cancelSubscription = async (): Promise<any> => {
 export const getPaymentMethod = async (): Promise<any> => {
   const idToken = await getValidToken();
   try {
-    const response = await fetch(`${DASHBOARD_API_URL}/payment-method`, {
+    const response = await authenticatedFetch(`${PAYMENTS_API_URL}/payment-method`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`,
@@ -605,9 +650,9 @@ export const getPaymentMethod = async (): Promise<any> => {
   }
 };
 
-export const sendInvoice = async (email: string, year: number, month: number): Promise<void> => {
+export const sendInvoice = async (email: string, year: number, month: number): Promise<any> => {
   const idToken = await getValidToken();
-  const response = await fetch(`${DASHBOARD_API_URL}/send-invoice`, {
+  const response = await authenticatedFetch(`${PAYMENTS_API_URL}/send-invoice`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${idToken}`,
@@ -622,4 +667,24 @@ export const sendInvoice = async (email: string, year: number, month: number): P
     apiError.status = response.status;
     throw apiError;
   }
+  return data;
+};
+
+export const getSubscriptionAuthUrl = async (): Promise<{ auth_url: string }> => {
+  const idToken = await getValidToken();
+  const response = await authenticatedFetch(`${PAYMENTS_API_URL}/get-auth-url`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const apiError = new Error(data.error || `API error: ${response.status}`) as any;
+    apiError.status = response.status;
+    throw apiError;
+  }
+  return data;
 };
