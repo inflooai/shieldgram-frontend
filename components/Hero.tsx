@@ -59,7 +59,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
 
       <div className="relative max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          <div className="text-center lg:text-left max-w-2xl lg:max-w-none">
+          <div className="text-center lg:text-left max-w-2xl lg:max-w-none pl-4 sm:pl-6">
             
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 text-xs font-semibold mb-6 shadow-sm">
                 <span className="relative flex h-2 w-2">
@@ -82,7 +82,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
                 onClick={onNavigateDashboard}
                 className="w-full sm:w-auto px-8 py-4 bg-brand-600 text-white rounded-full font-semibold text-lg hover:bg-brand-700 transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-1"
               >
-                Start Free Trial <ArrowRight className="w-5 h-5" />
+                Standard Free Trial <ArrowRight className="w-5 h-5" />
               </button>
               <button 
                 onClick={scrollToPricing}
@@ -103,7 +103,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigateDashboard }) => {
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-brand-500 dark:text-brand-400" />
-                <span>Meta Partner Verified</span>
+                <span>Meta Business Partner</span>
               </div>
             </div>
           </div>

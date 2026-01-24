@@ -63,9 +63,9 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD'
             </ul>
             <button 
               onClick={handlePlanClick}
-              className="mt-8 w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-semibold rounded-lg transition-colors"
+              className="mt-8 w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white font-semibold rounded-lg transition-colors shadow-md"
             >
-              Get Standard
+              Start Free Trial
             </button>
           </div>
 

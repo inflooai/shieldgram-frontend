@@ -52,13 +52,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
 
             {isLoggedIn ? (
                <div className="flex items-center gap-4">
-                 <Link 
-                  href="/dashboard"
-                  className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
-                 >
-                   <LayoutDashboard className="w-4 h-4" />
-                   Dashboard
-                 </Link>
+                   <Link 
+                    href="/dashboard"
+                    className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
+                   >
+                     <LayoutDashboard className="w-4 h-4" />
+                     Dashboard
+                   </Link>
                  <button 
                    onClick={onLogout}
                    className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white px-5 py-2 rounded-full font-medium transition-all text-sm"
@@ -68,18 +68,18 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
                </div>
             ) : (
                 <div className="flex items-center gap-4">
-                  <Link 
+                   <a 
                     href="/dashboard"
                     className="text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
                   >
                     Log In
-                  </Link>
-                  <Link 
+                  </a>
+                  <a 
                     href="/dashboard"
                     className="bg-brand-600 hover:bg-brand-700 dark:bg-brand-600 dark:hover:bg-brand-500 text-white px-5 py-2 rounded-full font-medium transition-all shadow-sm hover:shadow-md"
                   >
                     Get Started
-                  </Link>
+                  </a>
                 </div>
             )}
           </div>
@@ -125,13 +125,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigateDashboard, isDarkMode, toggle
                  </>
               ) : (
                 <>
-                  <Link href="/dashboard" className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">Log In</Link>
-                  <Link 
+                  <a href="/dashboard" className="block w-full text-left px-3 py-2 text-base font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md mb-2">Log In</a>
+                  <a 
                     href="/dashboard"
                     className="w-full block text-center bg-brand-600 hover:bg-brand-700 text-white px-5 py-3 rounded-lg font-medium shadow-sm"
                   >
                     Get Started
-                  </Link>
+                  </a>
                 </>
               )}
             </div>

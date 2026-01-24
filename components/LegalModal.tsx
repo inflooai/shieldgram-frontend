@@ -74,9 +74,25 @@ const LegalModal: React.FC<LegalModalProps> = ({ title, contentPath, onClose }) 
             </div>
           ) : (
             <div className="prose dark:prose-invert max-w-none">
-              <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300 leading-relaxed text-sm md:text-base">
-                {content}
-              </pre>
+              {contentPath.includes('faq') ? (
+                <div className="space-y-6">
+                  {content.split('## ').filter(Boolean).map((section, idx) => {
+                    const [question, ...answerParts] = section.split('\n');
+                    return (
+                      <div key={idx} className="border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">{question}</h3>
+                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm md:text-base">
+                          {answerParts.join('\n').trim()}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300 leading-relaxed text-sm md:text-base">
+                  {content}
+                </pre>
+              )}
             </div>
           )}
         </div>

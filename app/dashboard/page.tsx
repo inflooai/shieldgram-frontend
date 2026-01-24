@@ -47,9 +47,12 @@ export default function DashboardPage() {
     checkAuth();
   }, []);
 
+  // Removed handleLoginSuccess reload to prevent loops. 
+  // State update is sufficient to render Dashboard component.
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
-    window.location.reload();
+    // Force a data reload on login to ensure we have fresh dashboard data
+    // But do NOT reload the page
   };
 
   const handleLogout = () => {
@@ -67,7 +70,12 @@ export default function DashboardPage() {
         <div className={`min-h-screen ${isDarkMode ? 'dark' : ''}`}>
            <AuthPage 
               onLoginSuccess={handleLoginSuccess} 
-              onCancel={() => window.location.href = '/'} 
+              onCancel={() => {
+                  // We must ensure we don't just reload the current page if it's the dashboard,
+                  // because that would just show the login screen again.
+                  // We explicitly want to go to the LANDING page.
+                  window.location.href = '/';
+              }} 
            />
         </div>
      );

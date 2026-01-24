@@ -27,6 +27,7 @@ const Footer: React.FC = () => {
             <ul className="space-y-2 text-sm">
               <li><a href="#features" className="hover:text-brand-400 transition-colors">Features</a></li>
               <li><a href="#pricing" className="hover:text-brand-400 transition-colors">Pricing</a></li>
+              <li><a href="#/faq" className="hover:text-brand-400 transition-colors">FAQ</a></li>
               <li><a href="mailto:support@shieldgram.com" className="hover:text-brand-400 transition-colors">Contact</a></li>
             </ul>
           </div>

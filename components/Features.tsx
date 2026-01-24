@@ -5,33 +5,33 @@ const Features: React.FC = () => {
   const features = [
     {
       icon: <Filter className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
-      title: "Contextual Understanding",
-      description: "Unlike keyword filters, our AI understands sarcasm, context, and nuanced hate speech."
+      title: "Reasoning-Based Classification",
+      description: "Our AI detects nuanced hate speech and threats through logical reasoning, moving beyond simple keyword filters."
     },
     {
       icon: <Lock className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
-      title: "Privacy First",
-      description: "We don't store your user data. Comment analysis happens in a secure, ephemeral environment."
+      title: "Flexible Data Retention",
+      description: "We store data for your analytics dashboard by default, but you can enable 'Zero-Retention Mode' for total privacy."
     },
     {
       icon: <Settings className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
-      title: "Customizable Policies",
-      description: "Create and fine-tune moderation rules that align perfectly with your brand guidelines and community standards."
+      title: "Brand-Specific Policies",
+      description: "Fully supported custom policies that moderate even benign-looking comments if they violate your brand voice."
     },
     {
       icon: <Globe2 className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
       title: "Multi-language Support",
-      description: "ShieldGram speaks 30+ languages fluently, protecting your global community."
+      description: "ShieldGram supports 8 core languages including English, Portuguese, Spanish, French, German, Italian, Hindi, and Thai."
     },
     {
       icon: <Clock className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
-      title: "Optimized Scan Intervals",
-      description: "Comments are scanned in batches with intervals ranging from 5 minutes down to 30 seconds depending on your plan."
+      title: "Instant Moderation",
+      description: "Comments are scanned and moderated with an average response time of under 30 seconds across all plans."
     },
     {
       icon: <BarChart3 className="w-6 h-6 text-brand-600 dark:text-brand-400" />,
-      title: "Detailed Analytics",
-      description: "Track the health of your community with insights on sentiment trends and blocked threats."
+      title: "Actionable Analytics",
+      description: "Track comments scanned, moderation rates, and response times. Review and override any moderation decisions easily."
     }
   ];
 

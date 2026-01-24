@@ -63,6 +63,7 @@ interface UserSettings {
   };
   customInstructions: string;
   confidenceThreshold: number;
+  dataRetention: boolean;
   selectedCustomPolicies: string[];
   customPolicyDescriptions: Record<string, string>; // policy_name -> description
 }
@@ -98,6 +99,26 @@ const PLANS = {
   plus: { price: 15, label: 'Plus', features: ['20k comments/mo', '2 social accounts', 'Standard Protection'] },
   pro: { price: 30, label: 'Pro', features: ['50k comments/mo', '5 social accounts', 'Advanced Reasoning', 'Custom Policies'] },
   max: { price: 75, label: 'Max', features: ['200k comments/mo', 'Unlimited accounts', 'Advanced Reasoning', 'Custom Policies'] }
+};
+
+// Account limits per plan tier
+const ACCOUNT_LIMITS: Record<string, number | null> = {
+  standard: 1,
+  plus: 2,
+  pro: 5,
+  max: null, // Unlimited
+  trial_standard: 1,
+  trial_pro: 5,
+};
+
+// Monthly comment scan limits
+const MONTHLY_SCAN_LIMITS: Record<string, number> = {
+  standard: 5000,
+  plus: 20000,
+  pro: 50000,
+  max: 200000,
+  trial_standard: 5000,
+  trial_pro: 50000,
 };
 
 // Helper to load Razorpay SDK
@@ -164,14 +185,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
   const [selectedTrialPlan, setSelectedTrialPlan] = useState<'standard' | 'pro' | null>(null);
   const [isStartingTrial, setIsStartingTrial] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+  const [trialUsed, setTrialUsed] = useState(false);
 
   // New state for Plan Lock Modal
   const [isPlanLockModalOpen, setIsPlanLockModalOpen] = useState(false);
   const [isConfirmPlanChangeModalOpen, setIsConfirmPlanChangeModalOpen] = useState(false);
   const [planToChangeTo, setPlanToChangeTo] = useState<PlanType | null>(null);
 
+  // Zero-Retention confirmation modal
+  const [isZeroRetentionModalOpen, setIsZeroRetentionModalOpen] = useState(false);
+  const [zeroRetentionTarget, setZeroRetentionTarget] = useState<'enable' | 'disable' | null>(null);
+  const [isZeroRetentionProcessing, setIsZeroRetentionProcessing] = useState(false);
+
   // Invoice Request State
-  const [invoiceEmail, setInvoiceEmail] = useState('');
   const [invoiceMonth, setInvoiceMonth] = useState<{year: number, month: number}>({year: new Date().getFullYear(), month: new Date().getMonth() + 1});
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
 
@@ -194,6 +220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     },
     customInstructions: '',
     confidenceThreshold: 80,
+    dataRetention: true,
     selectedCustomPolicies: [],
     customPolicyDescriptions: {}
   });
@@ -247,6 +274,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
     return true;
   }, [isLoading, settings.plan, subscriptionStatus, subscriptionDetails]);
+
+  // Check if user has reached their account limit for the current plan
+  const isAccountLimitReached = React.useMemo(() => {
+    const limit = ACCOUNT_LIMITS[settings.plan];
+    if (limit === null || limit === undefined) return false; // Unlimited or unknown
+    return accounts.length >= limit;
+  }, [accounts.length, settings.plan]);
+
+  const accountLimit = ACCOUNT_LIMITS[settings.plan] ?? null;
 
   const handleCancelChanges = () => {
     if (originalSettings) {
@@ -318,6 +354,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       
       setSubscriptionStatus(status || '');
       setSubscriptionDetails(subscription_details || null);
+      setTrialUsed((dashboardData as any).trial_used || false);
 
       // Sync currency with subscription if active
       if (subscription_details?.currency) {
@@ -439,6 +476,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             },
             customInstructions: selected.custom_policy || '',
             confidenceThreshold: selected.confidence_threshold || 80,
+            dataRetention: selected.data_retention !== undefined ? selected.data_retention : true,
             selectedCustomPolicies: (() => {
                 try {
                     const parsed = JSON.parse(selected.custom_policy || '[]');
@@ -457,7 +495,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         setOriginalSettings(newSettings);
 
 
-        await fetchInterventions(selected.account_id, interventionsLimit);
+        if (newSettings.dataRetention) {
+             await fetchInterventions(selected.account_id, interventionsLimit);
+        } else {
+             setActivity([]);
+        }
 
         setStats({
           scanned: selected?.stats?.comments_scanned ?? 0,
@@ -481,6 +523,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
         console.error("Failed to load dashboard data", error);
         if (error.status === 401 || error.status === 403) {
             showToast("Session expired. Logging out...", "error");
+            // Only trigger logout callback, avoid forced reloads
             setTimeout(() => onLogout?.(), 2000);
         } else {
             showToast("Failed to load dashboard data", "error");
@@ -578,8 +621,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
       window.history.replaceState({}, document.title, window.location.pathname);
       
       if (error.status === 403) {
-          showToast("Subscription required to link account", "error");
-          setActiveTab('plan');
+          // Check if this is an account limit error
+          if (error.code === 'account_limit_reached') {
+              showToast(error.message || "Account limit reached. Please upgrade your plan to add more accounts.", "error");
+              setActiveTab('plan');
+          } else {
+              showToast("Subscription required to link account", "error");
+              setActiveTab('plan');
+          }
       } else if (error.status === 401) {
           showToast("Session expired. Logging out...", "error");
           setTimeout(() => onLogout?.(), 2000);
@@ -649,7 +698,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
             policiesStr,
             settings.plan,
             JSON.stringify(settings.selectedCustomPolicies),
-            settings.confidenceThreshold
+            settings.confidenceThreshold,
+            settings.dataRetention
         );
       
       // We assume custom policies are saved individually as they change, 
@@ -673,10 +723,72 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
     }
   };
 
+  const handleToggleZeroRetention = (enableZeroRetention: boolean) => {
+    setZeroRetentionTarget(enableZeroRetention ? 'enable' : 'disable');
+    setIsZeroRetentionModalOpen(true);
+  };
+
+  const handleConfirmZeroRetention = async () => {
+    if (!currentAccount || !rawAccountInfo || !zeroRetentionTarget) return;
+
+    const nextDataRetention = zeroRetentionTarget === 'enable' ? false : true;
+
+    const updatedSettings: UserSettings = {
+      ...settings,
+      dataRetention: nextDataRetention,
+    };
+
+    setIsZeroRetentionProcessing(true);
+    try {
+      const policiesStr = Object.entries(updatedSettings.policies)
+        .filter(([_, v]) => v)
+        .map(([k, _]) => k)
+        .join(', ');
+
+      await saveDashboardControls(
+        currentAccount.id,
+        rawAccountInfo.owner_user_id,
+        policiesStr,
+        updatedSettings.plan,
+        JSON.stringify(updatedSettings.selectedCustomPolicies),
+        updatedSettings.confidenceThreshold,
+        updatedSettings.dataRetention
+      );
+
+      setSettings(updatedSettings);
+      setOriginalSettings(updatedSettings);
+
+      if (!updatedSettings.dataRetention) {
+        setActivity([]);
+      } else {
+        await fetchInterventions(currentAccount.id, interventionsLimit);
+      }
+
+      showToast(
+        updatedSettings.dataRetention
+          ? 'Zero-Retention disabled. Analytics resumed.'
+          : 'Zero-Retention enabled. Logs hidden.',
+        'success'
+      );
+    } catch (error: any) {
+      console.error('Failed to update data retention', error);
+      if (error.status === 401 || error.status === 403) {
+        showToast('Session expired. Logging out...', 'error');
+        setTimeout(() => onLogout?.(), 2000);
+      } else {
+        showToast(error.message || 'Failed to update Zero-Retention setting', 'error');
+      }
+    } finally {
+      setIsZeroRetentionProcessing(false);
+      setIsZeroRetentionModalOpen(false);
+      setZeroRetentionTarget(null);
+    }
+  };
+
   const handleSaveCustomPolicy = async () => {
     if (!currentAccount || !newPolicyName || !newPolicyCondition) return;
     
-    const structuredDescription = `Treat comments with ${newPolicyCondition} as ${newPolicyAction}`;
+    const structuredDescription = newPolicyCondition;
     if (structuredDescription.length > 100) {
         showToast("Description is too long (max 100 characters combined)", "error");
         return;
@@ -750,6 +862,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
   const handleAction = async (id: string, action: 'SAFE' | 'DELETE') => {
     if (!currentAccount) return;
+
+    if (!settings.dataRetention) {
+        showToast("Manual actions are disabled in Zero-Retention Mode", "error");
+        return;
+    }
     
     // Find the comment in activity
     const comment = activity.find(c => c.id === id);
@@ -1113,24 +1230,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             ))}
                         </div>
                         <div className="border-t border-slate-100 dark:border-slate-800 p-2">
-                            <button 
-                                onClick={() => {
-                                   const authUrl = process.env.NEXT_PUBLIC_INSTAGRAM_AUTH_URL;
-                                   if (authUrl) {
-                                       window.location.href = authUrl;
-                                   } else {
-                                       showToast("Error: NEXT_PUBLIC_INSTAGRAM_AUTH_URL is not defined.", "error");
-                                   }
-                                   setIsAccountDropdownOpen(false);
-                                }}
-
-                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-medium group"
-                            >
-                                <div className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-dashed border-slate-300 dark:border-slate-600 group-hover:border-slate-400 dark:group-hover:border-slate-500 transition-colors">
-                                    <Plus className="w-4 h-4" />
+                            {isAccountLimitReached ? (
+                                <div className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 dark:text-slate-500 font-medium cursor-not-allowed" title={`Your ${settings.plan.replace('trial_', '')} plan allows max ${accountLimit} account${accountLimit && accountLimit > 1 ? 's' : ''}. Upgrade to add more.`}>
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-dashed border-slate-200 dark:border-slate-700">
+                                        <Lock className="w-4 h-4" />
+                                    </div>
+                                    <span>Limit Reached ({accounts.length}/{accountLimit})</span>
                                 </div>
-                                <span>Add New Account</span>
-                            </button>
+                            ) : (
+                                <button 
+                                    onClick={() => {
+                                       const authUrl = process.env.NEXT_PUBLIC_INSTAGRAM_AUTH_URL;
+                                       if (authUrl) {
+                                           window.location.href = authUrl;
+                                       } else {
+                                           showToast("Error: NEXT_PUBLIC_INSTAGRAM_AUTH_URL is not defined.", "error");
+                                       }
+                                       setIsAccountDropdownOpen(false);
+                                    }}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-medium group"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-dashed border-slate-300 dark:border-slate-600 group-hover:border-slate-400 dark:group-hover:border-slate-500 transition-colors">
+                                        <Plus className="w-4 h-4" />
+                                    </div>
+                                    <span>Add New Account</span>
+                                </button>
+                            )}
 
                         </div>
                     </div>
@@ -1321,7 +1446,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center justify-between mb-8">
+
+                  {/* Trial Expiry Warning */}
+                  {(settings.plan.startsWith('trial_') && trialDaysRemaining !== null && trialDaysRemaining <= 2) && (
+                      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
+                         <div className="flex items-start gap-3">
+                             <div className="p-2 bg-indigo-100 dark:bg-indigo-800 rounded-lg text-indigo-600 dark:text-indigo-300 mt-1">
+                                <Zap className="w-4 h-4 fill-current" />
+                             </div>
+                             <div>
+                                <h3 className="font-bold text-indigo-900 dark:text-indigo-100 text-sm">Trial Ending Soon</h3>
+                                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1 leading-relaxed max-w-xl">
+                                   Your free trial expires in <span className="font-bold">{trialDaysRemaining} day{trialDaysRemaining !== 1 ? 's' : ''}</span>. 
+                                   Add a payment method now to prevent any interruption in your protection.
+                                </p>
+                             </div>
+                         </div>
+                         <button 
+                             onClick={() => setActiveTab('plan')}
+                             className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm shrink-0 whitespace-nowrap"
+                         >
+                            Secure Account
+                         </button>
+                      </div>
+                  )}
+
+                    {!settings.dataRetention && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-8 flex items-start gap-3 animate-fade-in">
+                         <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg text-blue-600 dark:text-blue-300 mt-1">
+                            <Shield className="w-4 h-4" />
+                         </div>
+                         <div>
+                            <div className="flex items-center gap-3">
+                              <h3 className="font-bold text-blue-900 dark:text-blue-100 text-sm">Zero-Retention Active</h3>
+                              <button
+                                onClick={() => handleToggleZeroRetention(false)}
+                                className="text-[11px] font-semibold text-blue-700 dark:text-blue-300 underline"
+                              >
+                                Turn off
+                              </button>
+                            </div>
+                            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1 leading-relaxed">
+                               ShieldGram is actively moderating your account but is NOT storing any comment data. Analytics below are aggregated counters only.
+                            </p>
+                         </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Overview</h1>
                     <div className="flex items-center gap-4">
                         <button 
@@ -1350,7 +1522,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Comments Scanned</p>
-                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{Math.max(0, stats.scanned).toLocaleString()}</h3>
+                          <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">
+                            {Math.max(0, stats.scanned).toLocaleString()}
+                            <span className="text-sm font-medium text-slate-400 dark:text-slate-500 ml-2">
+                               / {MONTHLY_SCAN_LIMITS[settings.plan] ? MONTHLY_SCAN_LIMITS[settings.plan].toLocaleString() : '0'}
+                            </span>
+                          </h3>
 
                           <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
                             <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Scanned</span>
@@ -1401,9 +1578,34 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                   {/* Recent Activity */}
                   <div className="mb-8">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Recent Automated Interventions</h2>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Recent Automated Interventions</h2>
+                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-full">
+                          <span>Zero-Retention</span>
+                          <div className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={!settings.dataRetention}
+                              onChange={(e) => handleToggleZeroRetention(e.target.checked)}
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-600"></div>
+                          </div>
+                        </label>
+                      </div>
                     </div>
-                    {activity.length === 0 ? (
+                    
+                    {!settings.dataRetention ? (
+                        <div className="bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-12 text-center">
+                            <div className="w-12 h-12 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500 dark:text-slate-400">
+                                <Shield className="w-6 h-6" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Activity Hidden</h3>
+                            <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                                Recent activity logs are disabled because Zero-Retention Mode is active. No comment data is being stored.
+                            </p>
+                        </div>
+                    ) : activity.length === 0 ? (
                        <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 border-dashed">
                           <p className="text-slate-500">No activity logged yet.</p>
                        </div>
@@ -1469,6 +1671,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                       </div>
                     )}
                     
+                    {settings.dataRetention && (
                     <button 
                       onClick={handleLoadMore}
                       disabled={isLoadingInterventions}
@@ -1483,6 +1686,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                           "Load More History"
                         )}
                     </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1678,14 +1882,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                                                 e.stopPropagation();
                                                                 setEditingPolicyName(name);
                                                                 setNewPolicyName(name);
+                                                                // Support both old format and new simple format
                                                                 const match = (desc as string).match(/^Treat comments with (.*) as (.*)$/);
                                                                 if (match) {
                                                                     setNewPolicyCondition(match[1]);
-                                                                    setNewPolicyAction(match[2]);
                                                                 } else {
                                                                     setNewPolicyCondition(desc as string);
-                                                                    setNewPolicyAction('spam');
                                                                 }
+                                                                setNewPolicyAction('spam');
                                                                 setIsCustomPolicyFormOpen(true);
                                                             }}
                                                             className="p-1 text-slate-400 hover:text-brand-600 transition-colors"
@@ -1851,31 +2055,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                         </div>
                                         
                                         <div className="bg-slate-50 dark:bg-slate-950/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                                            <div className="flex flex-col gap-3">
-                                                <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
-                                                    <span>Treat comments with</span>
-                                                </div>
-                                                <textarea 
-                                                    value={newPolicyCondition}
-                                                    onChange={(e) => setNewPolicyCondition(e.target.value)}
-                                                    className="w-full h-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none resize-none text-sm"
-                                                />
-                                                <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
-                                                    <span>as</span>
-                                                    <select 
-                                                        value={newPolicyAction}
-                                                        onChange={(e) => setNewPolicyAction(e.target.value)}
-                                                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none text-sm font-bold min-w-[120px]"
-                                                    >
-                                                        <option value="spam">Spam</option>
-                                                        <option value="hateSpeech">Hate Speech</option>
-                                                        <option value="harassment">Harassment</option>
-                                                        <option value="violence">Violence</option>
-                                                        <option value="sexualContent">Sexual Content</option>
-                                                        <option value="selfHarm">Self Harm</option>
-                                                    </select>
-                                                </div>
-                                            </div>
+                                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Policy Description</label>
+                                            <textarea 
+                                                value={newPolicyCondition}
+                                                onChange={(e) => setNewPolicyCondition(e.target.value)}
+                                                placeholder="Mentions of competitors like..."
+                                                className="w-full h-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none resize-none text-sm"
+                                            />
                                         </div>
                                     </div>
 
@@ -1939,19 +2125,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                             </h2>
 
                                             {subscriptionStatus === 'payment_failed' && (
-                                                <div className="mt-2 mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between animate-pulse">
+                                                <div className="mt-2 mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center justify-between animate-pulse">
                                                     <div className="flex items-center gap-3">
-                                                        <Loader2 className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-spin" />
+                                                        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                                                         <div>
-                                                            <p className="text-xs font-bold text-amber-900 dark:text-amber-100">Payment Processing</p>
-                                                            <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-tight">We are retrying your payment. Please check your payment method.</p>
+                                                            <p className="text-xs font-bold text-red-900 dark:text-red-100">Payment Failed</p>
+                                                            <p className="text-[10px] text-red-700 dark:text-red-300 leading-tight">Your latest payment was unsuccessful. Please update your method to stay protected.</p>
                                                         </div>
                                                     </div>
                                                     <button 
                                                         onClick={(e) => handleUpdatePaymentMethod(e)}
-                                                        className="px-2 py-1 bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded-lg hover:bg-slate-50 transition-all border border-amber-200 dark:border-amber-800/50"
+                                                        className="px-2 py-1 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 text-[10px] font-bold rounded-lg hover:bg-slate-50 transition-all border border-red-200 dark:border-red-800/50"
                                                     >
-                                                        Update Method
+                                                        Fix Now
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {(settings.plan.startsWith('trial_') && trialDaysRemaining !== null && trialDaysRemaining <= 2) && (
+                                                <div className="mt-2 mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center justify-between animate-pulse">
+                                                    <div className="flex items-center gap-3">
+                                                        <Zap className="w-5 h-5 text-indigo-600 dark:text-indigo-400 fill-current" />
+                                                        <div>
+                                                            <p className="text-xs font-bold text-indigo-900 dark:text-indigo-100">Trial Expiring Soon</p>
+                                                            <p className="text-[10px] text-indigo-700 dark:text-indigo-300 leading-tight">
+                                                                Your free trial ends in {trialDaysRemaining} day{trialDaysRemaining !== 1 ? 's' : ''}. Add a payment method to keep your protection active.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            handleStartTrialClick(settings.plan.replace('trial_', '') as 'standard' | 'pro');
+                                                        }}
+                                                        className="px-2 py-1 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold rounded-lg hover:bg-slate-50 transition-all border border-indigo-200 dark:border-indigo-800/50"
+                                                    >
+                                                        Keep Active
                                                     </button>
                                                 </div>
                                             )}
@@ -2095,18 +2304,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                                                 </div>
                                             </div>
                                             
-                                            {/* UPI Limitation Warning */}
-                                            {paymentMethod.method === 'upi' && (
-                                                <div className="flex items-start gap-3 p-3 mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                                    <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                                                    <div>
-                                                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">UPI Limitation</p>
-                                                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                                                            Plan changes are not supported with UPI. To switch plans, you must cancel your current subscription and resubscribe using a Card. Note: New subscriptions are charged the full amount immediately.
-                                                        </p>
-                                                    </div>
+                                            {/* Plan Change Info - Applies to all payment methods */}
+                                            <div className="flex items-start gap-3 p-3 mb-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                                <AlertCircle className="w-5 h-5 text-slate-600 dark:text-slate-400 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-300">Plan Changes</p>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                                        To switch plans, cancel your current subscription first. You can then subscribe to a new plan.
+                                                    </p>
                                                 </div>
-                                            )}
+                                            </div>
                                             
                                             <div className="flex gap-2">
                                                 <button 
@@ -2282,7 +2489,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
 
                                     {/* Show Select Plan for users without a plan or cancelled */}
                                     {!settings.plan || subscriptionStatus === 'cancelled' ? (
-                                        (planKey === 'standard' || planKey === 'pro') ? (
+                                        (planKey === 'standard' || planKey === 'pro') && !trialUsed ? (
                                             <button
                                                 onClick={() => handleStartTrialClick(planKey as 'standard' | 'pro')}
                                                 disabled={isStartingTrial || isProcessingPayment}
@@ -2340,17 +2547,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             Request Invoice {!settings.plan && <Lock className="w-4 h-4 text-slate-400" />}
                         </h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                            Enter your email and select a month to receive your invoice.
+                            Select a month to receive your invoice at your registered email address.
                         </p>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <input
-                                type="email"
-                                placeholder="Email address"
-                                value={invoiceEmail}
-                                onChange={(e) => setInvoiceEmail(e.target.value)}
-                                disabled={!settings.plan}
-                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none disabled:cursor-not-allowed"
-                            />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <select
                                 value={`${invoiceMonth.year}-${invoiceMonth.month}`}
                                 onChange={(e) => {
@@ -2372,18 +2571,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
                             </select>
                             <button
                                 onClick={async () => {
-                                    if (!invoiceEmail) {
-                                        showToast('Please enter an email address', 'error');
-                                        return;
-                                    }
                                     setIsSendingInvoice(true);
                                     try {
-                                        const result = await sendInvoice(invoiceEmail, invoiceMonth.year, invoiceMonth.month);
-                                        if (result.is_paid && result.short_url) {
-                                            showToast('Invoice is already paid. Opening direct link...', 'success');
+                                        const result = await sendInvoice(invoiceMonth.year, invoiceMonth.month);
+                                        if (result.short_url) {
+                                            showToast(result.is_paid ? 'Invoice (Paid) found. Opening...' : 'Invoice (Unpaid) found. Opening...', 'success');
                                             window.open(result.short_url, '_blank');
                                         } else {
-                                            showToast('Invoice request sent! Check your email.', 'success');
+                                            showToast('Invoice link generated!', 'success');
                                         }
                                     } catch (err: any) {
                                         showToast(err.message || 'Failed to send invoice', 'error');
@@ -2705,7 +2900,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, isDarkMode, toggleTheme
           </div>
         </div>
       )}
-      
+
+      {/* Zero-Retention Confirmation Modal */}
+      {isZeroRetentionModalOpen && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${zeroRetentionTarget === 'enable' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'bg-green-50 dark:bg-green-900/20 text-green-600'}`}>
+                <Shield className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                {zeroRetentionTarget === 'enable' ? 'Enable Zero-Retention?' : 'Disable Zero-Retention?'}
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                {zeroRetentionTarget === 'enable'
+                  ? 'Analytics and historical logs will be disabled. You will lose the ability to manually override AI actions or delete comments from the dashboard. We already automatically delete data older than 1 month.'
+                  : 'Analytics will resume for future comments.'}
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleConfirmZeroRetention}
+                  disabled={isZeroRetentionProcessing}
+                  className={`w-full py-3 font-bold rounded-xl shadow-lg transition-all ${zeroRetentionTarget === 'enable'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20'
+                    : 'bg-green-600 hover:bg-green-700 text-white shadow-green-500/20'
+                  } disabled:opacity-50`}
+                >
+                  {isZeroRetentionProcessing ? 'Saving...' : zeroRetentionTarget === 'enable' ? 'Enable Zero-Retention' : 'Disable Zero-Retention'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsZeroRetentionModalOpen(false);
+                    setZeroRetentionTarget(null);
+                  }}
+                  disabled={isZeroRetentionProcessing}
+                  className="w-full py-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm Plan Change Modal (for Cancelled users) */}
       {isConfirmPlanChangeModalOpen && planToChangeTo && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">

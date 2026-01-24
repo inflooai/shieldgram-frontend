@@ -25,11 +25,8 @@ const PAYMENTS_API_URL = paymentsBase.endsWith('/') ? paymentsBase.slice(0, -1) 
 const handleUnauthorized = () => {
   console.warn("Received 401 Unauthorized - logging out user");
   removeAuthToken();
-  
-  // Redirect to signin page
-  if (typeof window !== 'undefined') {
-    window.location.href = '/?mode=signin';
-  }
+  // We do not force a reload here anymore to avoid reload loops.
+  // The UI components (Dashboard.tsx) should catch the 401 error and handle the logout transition gracefully.
 };
 
 /**
@@ -59,6 +56,7 @@ export interface AccountInfo {
   policies: string;
   custom_policy: string;
   confidence_threshold: number;
+  data_retention?: boolean;
   profile_picture_url: string;
   custom_policy_definitions?: { policy_name: string, description: string }[];
   is_deauthorized?: boolean;
@@ -297,7 +295,8 @@ export const saveDashboardControls = async (
   policies: string,
   plan_type: string,
   custom_policy: string,
-  confidence_threshold: number
+  confidence_threshold: number,
+  data_retention: boolean
 ): Promise<void> => {
   const idToken = await getValidToken();
   try {
@@ -313,7 +312,8 @@ export const saveDashboardControls = async (
         policies,
         plan_type,
         custom_policy,
-        confidence_threshold
+        confidence_threshold,
+        data_retention
       }),
     });
 
@@ -343,8 +343,9 @@ export const addInstagramAccount = async (code: string): Promise<any> => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const apiError = new Error(errorData.error || `API error: ${response.status}`) as any;
+      const apiError = new Error(errorData.message || errorData.error || `API error: ${response.status}`) as any;
       apiError.status = response.status;
+      apiError.code = errorData.code;  // Include error code from backend
       throw apiError;
     }
 
@@ -650,7 +651,7 @@ export const getPaymentMethod = async (): Promise<any> => {
   }
 };
 
-export const sendInvoice = async (email: string, year: number, month: number): Promise<any> => {
+export const sendInvoice = async (year: number, month: number): Promise<any> => {
   const idToken = await getValidToken();
   const response = await authenticatedFetch(`${PAYMENTS_API_URL}/send-invoice`, {
     method: 'POST',
@@ -658,7 +659,7 @@ export const sendInvoice = async (email: string, year: number, month: number): P
       'Authorization': `Bearer ${idToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, year, month })
+    body: JSON.stringify({ year, month })
   });
 
   const data = await response.json();

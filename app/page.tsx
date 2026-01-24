@@ -102,6 +102,8 @@ export default function LandingPage() {
   };
 
   const handleNavigateToDashboard = () => {
+    // Check if we are already logged in via state or cookie to decide flow?
+    // Actually, simple link to dashboard is fine, it handles the rest.
     window.location.href = '/dashboard';
   };
 
@@ -114,6 +116,7 @@ export default function LandingPage() {
           const hash = window.location.hash;
           if (hash === '#/privacy' || hash === '#/privacy-policy') setModalPath('/privacy.txt');
           else if (hash === '#/terms' || hash === '#/tos') setModalPath('/tos.txt');
+          else if (hash === '#/faq') setModalPath('/faq.txt');
           else setModalPath(null);
       };
       window.addEventListener('hashchange', handleHash);
@@ -125,7 +128,7 @@ export default function LandingPage() {
      return (
         <div className={`min-h-screen ${isDarkMode ? 'dark' : ''} bg-white dark:bg-slate-950`}>
           <LegalModal 
-            title={modalPath.includes('privacy') ? "Privacy Policy" : "Terms of Service"} 
+            title={modalPath.includes('privacy') ? "Privacy Policy" : modalPath.includes('faq') ? "Frequently Asked Questions" : "Terms of Service"} 
             contentPath={modalPath} 
             onClose={() => { window.location.hash = ''; setModalPath(null); }} 
           />

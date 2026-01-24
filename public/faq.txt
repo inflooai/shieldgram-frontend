@@ -1,0 +1,14 @@
+## Do you store my Instagram password?
+No, we do not. We use the official Instagram Graph API for all interactions. We never see, access, or store your Instagram password. All authentication is handled securely through Facebook/Instagram's own login dialogs.
+
+## Can I customize the moderation rules?
+Yes, fully. ShieldGram supports highly flexible **Brand-Specific Policies**. You can define custom rules that go beyond standard moderation, allowing you to filter out comments that might be benign but violate your specific brand voice or community guidelines. This ensures your comment section reflects exactly the tone you want to set.
+
+## What happens to hidden comments?
+Hidden comments are not deleted, but they become invisible to everyone, including the account owner, except for the person who posted the comment. To anyone else browsing your post, these comments simply do not appear. They are effectively "shadow-banned" from your public feed, keeping your community safe without necessarily alerting the troll or spammer that their comment was removed.
+
+## Is my data safe?
+Yes, your data security is our top priority. We use industry-standard encryption for all data in transit and at rest. We strictly adhere to data privacy regulations and only access the minimum amount of data necessary to provide our moderation service. We do not sell your data to third parties.
+
+## Do you offer enterprise plans with higher limits?
+Yes, we offer a **Max** plan designed for large-scale needs, which includes up to **200k comments per month**, **Unlimited social accounts**, and our most advanced reasoning capabilities. If you need even higher limits or a custom enterprise solution, please contact our support team, and we can tailor a plan to fit your specific requirements.
