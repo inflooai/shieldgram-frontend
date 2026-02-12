@@ -16,7 +16,8 @@ interface AuthPageProps {
 // =========================================================================
 const COGNITO_CONFIG = {
   UserPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID, 
-  ClientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID
+  ClientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
+  Domain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN
 };
 type AuthMode = 'signin' | 'signup' | 'verify' | 'totp' | 'new_password';
 
@@ -295,11 +296,11 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onCancel }) => {
   };
 
   const handleGoogleLogin = () => {
-    const domain = process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
+    const domain = COGNITO_CONFIG.Domain;
     const clientId = COGNITO_CONFIG.ClientId;
     
     if (!domain) {
-      setError("Google Login is not fully configured (Missing Domain). Please contact support.");
+      setError("Google Login is not fully configured (Missing Domain). Please ensure NEXT_PUBLIC_COGNITO_DOMAIN is set in your environment.");
       return;
     }
 
