@@ -58,7 +58,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD'
                 <Users className="w-5 h-5 text-brand-500 dark:text-brand-400 flex-shrink-0" /> <strong>1</strong> social account
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Standard Spam Protection
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0" /> Standard Protection
               </li>
             </ul>
             <button 
@@ -85,7 +85,7 @@ const Pricing: React.FC<PricingProps> = ({ onNavigateDashboard, currency = 'USD'
                 <Users className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> <strong>2</strong> social accounts
               </li>
               <li className="flex items-center gap-3 text-slate-600 dark:text-slate-300 text-sm">
-                <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> Standard Spam Protection
+                <Check className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0" /> Standard Protection
               </li>
             </ul>
             <button 
